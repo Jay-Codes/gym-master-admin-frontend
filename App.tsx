@@ -3,22 +3,22 @@ import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'r
 import { Layout } from './components/Layout';
 import { Modal } from './components/Modal';
 import { api } from './services/api';
-import { 
-  User, SuperAdmin, Company, PageableResponse, 
-  CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest 
+import {
+    User, SuperAdmin, Company, PageableResponse,
+    CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest
 } from './types';
-import { 
-  Plus, Edit2, Trash2, Power, Search, 
-  ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
-  Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
-  Eye, Copy, Check, Filter
+import {
+    Plus, Edit2, Trash2, Power, Search,
+    ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
+    Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
+    Eye, Copy, Check, Filter
 } from 'lucide-react';
 
 // --- Helper Components ---
 
 const CopyableDetail = ({ label, value }: { label: string, value: string | number | boolean }) => {
     const [copied, setCopied] = useState(false);
-    
+
     const handleCopy = () => {
         if (!value) return;
         navigator.clipboard.writeText(String(value));
@@ -33,8 +33,8 @@ const CopyableDetail = ({ label, value }: { label: string, value: string | numbe
                 <span className="text-sm text-gray-900 font-medium text-right max-w-[200px] truncate" title={String(value)}>
                     {String(value)}
                 </span>
-                <button 
-                    onClick={handleCopy} 
+                <button
+                    onClick={handleCopy}
                     className="p-1 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
                     title="Copy to clipboard"
                 >
@@ -48,157 +48,157 @@ const CopyableDetail = ({ label, value }: { label: string, value: string | numbe
 // --- Auth Component ---
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+    const navigate = useNavigate();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api.auth.login({ email, password });
-      if (data.data && data.data.token) {
-          localStorage.setItem('token', data.data.token);
-          localStorage.setItem('role', data.data.role);
-          navigate('/dashboard');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        try {
+            const data = await api.auth.login({ email, password });
+            if (data.data && data.data.token) {
+                localStorage.setItem('token', data.data.token);
+                localStorage.setItem('role', data.data.role);
+                navigate('/dashboard');
+            }
+        } catch (err: any) {
+            setError(err.message || 'Login failed');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-6">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4">
-            <ShieldCheck className="text-white" size={32} />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">Super Admin</h1>
-          <p className="text-gray-500 mt-2">Sign in to manage the platform</p>
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-6">
+                <div className="text-center">
+                    <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4">
+                        <ShieldCheck className="text-white" size={32} />
+                    </div>
+                    <h1 className="text-3xl font-bold text-gray-900">Super Admin</h1>
+                    <p className="text-gray-500 mt-2">Sign in to manage the platform</p>
+                </div>
+                {error && (
+                    <div className="p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                        <XCircle size={16} /> {error}
+                    </div>
+                )}
+                <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                        <input
+                            type="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                            placeholder="admin@example.com"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input
+                            type="password"
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                            placeholder="••••••••"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                        {loading ? <Loader2 className="animate-spin" size={18} /> : "Sign In"}
+                    </button>
+                </form>
+            </div>
         </div>
-        {error && (
-          <div className="p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
-            <XCircle size={16} /> {error}
-          </div>
-        )}
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
-              placeholder="admin@example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
-              placeholder="••••••••"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : "Sign In"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
+    );
 };
 
 // --- Dashboard Component ---
 
 const DashboardStats = () => {
-  const [stats, setStats] = useState({ companies: 0, users: 0, admins: 0 });
+    const [stats, setStats] = useState({ companies: 0, users: 0, admins: 0 });
 
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const [c, u, a] = await Promise.all([
-          api.companies.list(0, 1000),
-          api.users.list(0, 1000),
-          api.superAdmin.list()
-        ]);
-        
-        const companyCount = (c.data as any).totalElements || (Array.isArray(c.data) ? c.data.length : (c.data as any).content?.length || 0);
-        const userCount = (u.data as any).totalElements || (Array.isArray(u.data) ? u.data.length : (u.data as any).content?.length || 0);
-        const adminCount = Array.isArray(a.data) ? a.data.length : 0;
+    useEffect(() => {
+        const loadStats = async () => {
+            try {
+                const [c, u, a] = await Promise.all([
+                    api.companies.list(0, 1000),
+                    api.users.list(0, 1000),
+                    api.superAdmin.list()
+                ]);
 
-        setStats({ companies: companyCount, users: userCount, admins: adminCount });
-      } catch (error) {
-        console.error("Failed to load stats", error);
-      }
-    };
-    loadStats();
-  }, []);
+                const companyCount = (c.data as any).totalElements || (Array.isArray(c.data) ? c.data.length : (c.data as any).content?.length || 0);
+                const userCount = (u.data as any).totalElements || (Array.isArray(u.data) ? u.data.length : (u.data as any).content?.length || 0);
+                const adminCount = Array.isArray(a.data) ? a.data.length : 0;
 
-  return (
-    <div>
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Dashboard Overview</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-            <div>
-                <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Companies</h3>
-                <p className="text-3xl font-bold text-blue-600 mt-2">{stats.companies}</p>
+                setStats({ companies: companyCount, users: userCount, admins: adminCount });
+            } catch (error) {
+                console.error("Failed to load stats", error);
+            }
+        };
+        loadStats();
+    }, []);
+
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Dashboard Overview</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Companies</h3>
+                        <p className="text-3xl font-bold text-blue-600 mt-2">{stats.companies}</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-full">
+                        <Building2 className="text-blue-600" size={32} />
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Users</h3>
+                        <p className="text-3xl font-bold text-green-600 mt-2">{stats.users}</p>
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-full">
+                        <Users className="text-green-600" size={32} />
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Super Admins</h3>
+                        <p className="text-3xl font-bold text-purple-600 mt-2">{stats.admins}</p>
+                    </div>
+                    <div className="p-3 bg-purple-50 rounded-full">
+                        <ShieldCheck className="text-purple-600" size={32} />
+                    </div>
+                </div>
             </div>
-            <div className="p-3 bg-blue-50 rounded-full">
-              <Building2 className="text-blue-600" size={32} />
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to Gym Services Admin</h3>
+                <p className="text-gray-500">Select a category from the sidebar to start managing the platform.</p>
             </div>
         </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-            <div>
-                <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Users</h3>
-                <p className="text-3xl font-bold text-green-600 mt-2">{stats.users}</p>
-            </div>
-            <div className="p-3 bg-green-50 rounded-full">
-              <Users className="text-green-600" size={32} />
-            </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
-            <div>
-                <h3 className="text-gray-500 text-sm font-medium uppercase tracking-wider">Super Admins</h3>
-                <p className="text-3xl font-bold text-purple-600 mt-2">{stats.admins}</p>
-            </div>
-            <div className="p-3 bg-purple-50 rounded-full">
-              <ShieldCheck className="text-purple-600" size={32} />
-            </div>
-        </div>
-      </div>
-      
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to Gym Services Admin</h3>
-        <p className="text-gray-500">Select a category from the sidebar to start managing the platform.</p>
-      </div>
-    </div>
-  );
+    );
 };
 
 // --- Shared Table Component ---
 
-const DataTable = <T,>({ 
-    data, 
-    columns, 
-    actions, 
-    pagination 
-}: { 
-    data: T[], 
+const DataTable = <T,>({
+    data,
+    columns,
+    actions,
+    pagination
+}: {
+    data: T[],
     columns: { header: string, accessor: (item: T) => React.ReactNode }[],
     actions?: (item: T) => React.ReactNode,
     pagination?: { page: number, totalPages: number, onPageChange: (p: number) => void }
@@ -243,7 +243,7 @@ const DataTable = <T,>({
             </table>
         </div>
         {pagination && pagination.totalPages > 1 && (
-             <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
                 <div className="flex-1 flex justify-between sm:justify-end gap-2">
                     <button
                         onClick={() => pagination.onPageChange(Math.max(0, pagination.page - 1))}
@@ -263,7 +263,7 @@ const DataTable = <T,>({
                         Next <ChevronRight size={16} />
                     </button>
                 </div>
-             </div>
+            </div>
         )}
     </div>
 );
@@ -305,7 +305,7 @@ const SuperAdminsPage = () => {
     };
 
     const handleToggleStatus = async (id: number) => {
-        if(!window.confirm("Are you sure you want to toggle this admin's status?")) return;
+        if (!window.confirm("Are you sure you want to toggle this admin's status?")) return;
         try {
             await api.superAdmin.toggleStatus(id);
             fetchAdmins();
@@ -314,12 +314,12 @@ const SuperAdminsPage = () => {
 
     const openEdit = (admin: SuperAdmin) => {
         setEditingAdmin(admin);
-        setFormData({ 
-            username: admin.username, 
-            email: admin.email, 
-            fullName: admin.fullName, 
-            phoneNumber: admin.phoneNumber, 
-            password: '' 
+        setFormData({
+            username: admin.username,
+            email: admin.email,
+            fullName: admin.fullName,
+            phoneNumber: admin.phoneNumber,
+            password: ''
         });
         setIsModalOpen(true);
     };
@@ -328,7 +328,7 @@ const SuperAdminsPage = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">Super Admins</h1>
-                <button 
+                <button
                     onClick={() => { setEditingAdmin(null); setFormData({ username: '', email: '', fullName: '', phoneNumber: '', password: '' }); setIsModalOpen(true); }}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm"
                 >
@@ -336,20 +336,22 @@ const SuperAdminsPage = () => {
                 </button>
             </div>
 
-            <DataTable 
+            <DataTable<SuperAdmin>
                 data={admins}
                 columns={[
                     { header: 'Full Name', accessor: (sa) => <div className="font-medium text-gray-900">{sa.fullName}</div> },
                     { header: 'Username', accessor: (sa) => sa.username },
                     { header: 'Email', accessor: (sa) => sa.email },
                     { header: 'Phone', accessor: (sa) => sa.phoneNumber },
-                    { header: 'Status', accessor: (sa) => (
-                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${sa.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                             {sa.active !== false ? 'Active' : 'Inactive'}
-                         </span>
-                    )}
+                    {
+                        header: 'Status', accessor: (sa) => (
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${sa.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {sa.active !== false ? 'Active' : 'Inactive'}
+                            </span>
+                        )
+                    }
                 ]}
-                actions={(sa) => (
+                actions={(sa: SuperAdmin) => (
                     <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openEdit(sa)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-md transition-colors"><Edit2 size={16} /></button>
                         <button onClick={() => handleToggleStatus(sa.id)} className="text-orange-600 hover:bg-orange-50 p-1.5 rounded-md transition-colors"><Power size={16} /></button>
@@ -362,24 +364,24 @@ const SuperAdminsPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} />
+                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: e.target.value })} />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
+                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                            <input type="email" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                            <input type="email" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.phoneNumber} onChange={e => setFormData({...formData, phoneNumber: e.target.value})} />
+                            <input type="text" required className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.phoneNumber} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} />
                         </div>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">{editingAdmin ? "New Password (Optional)" : "Password"}</label>
-                        <input type="password" required={!editingAdmin} className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+                        <input type="password" required={!editingAdmin} className="border border-gray-300 p-2 rounded-lg w-full bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                     </div>
                     <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium bg-white">Cancel</button>
@@ -402,7 +404,7 @@ const CompaniesPage = () => {
     const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
     const [toggleReason, setToggleReason] = useState('');
     const [toggleAction, setToggleAction] = useState<'activate' | 'deactivate'>('deactivate');
-    
+
     // Search & Filter State
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'SUSPENDED'>('ALL');
@@ -412,11 +414,11 @@ const CompaniesPage = () => {
 
     // Edit state
     const [editingCompany, setEditingCompany] = useState<Company | null>(null);
-    
+
     const initialForm: CreateCompanyRequest = {
-        companyName: '', subDomain: '', companyEmail: '', tin: '', description: '', 
-        address: '', phone: '', website: '', founder: '', manager: '', 
-        accountName: '', accountNumber: '', preferredLanguage: 'EN', 
+        companyName: '', subDomain: '', companyEmail: '', tin: '', description: '',
+        address: '', phone: '', website: '', founder: '', manager: '',
+        accountName: '', accountNumber: '', preferredLanguage: 'EN',
         messageStatus: 'ENABLED', isSmsEnabled: true, subscriptionMonths: 12
     };
     const [formData, setFormData] = useState<CreateCompanyRequest>(initialForm);
@@ -429,9 +431,9 @@ const CompaniesPage = () => {
                 setCompanies(pageData.content);
                 setTotalPages(pageData.totalPages);
             } else {
-                 const list = Array.isArray(res.data) ? res.data : [];
-                 setCompanies(list);
-                 setTotalPages(1);
+                const list = Array.isArray(res.data) ? res.data : [];
+                setCompanies(list);
+                setTotalPages(1);
             }
         } catch (error) { console.error(error); }
     }, [page, searchTerm, statusFilter]);
@@ -477,14 +479,14 @@ const CompaniesPage = () => {
             preferredLanguage: company.preferredLanguage,
             messageStatus: company.messageStatus,
             isSmsEnabled: company.isSmsEnabled,
-            subscriptionMonths: company.subscriptionMonths
+            subscriptionMonths: 12
         });
         setIsModalOpen(true);
     };
 
     const initiateToggle = (company: Company) => {
         setSelectedCompanyId(company.id);
-        setToggleAction(company.active ? 'deactivate' : 'activate');
+        setToggleAction(company.isActivated ? 'deactivate' : 'activate');
         setToggleReason('');
         setReasonModalOpen(true);
     };
@@ -523,7 +525,7 @@ const CompaniesPage = () => {
         <div>
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <h1 className="text-2xl font-bold text-gray-900">Companies</h1>
-                <button 
+                <button
                     onClick={() => {
                         setEditingCompany(null);
                         setFormData(initialForm);
@@ -559,59 +561,65 @@ const CompaniesPage = () => {
                             <option value="ACTIVE">Active</option>
                             <option value="SUSPENDED">Suspended</option>
                         </select>
-                         {/* Custom chevron for select */}
+                        {/* Custom chevron for select */}
                         <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                             <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <DataTable 
+            <DataTable<Company>
                 data={companies}
                 pagination={{ page, totalPages, onPageChange: setPage }}
                 columns={[
-                    { header: 'Company Name', accessor: (c) => (
-                        <div>
-                            <div className="font-medium text-gray-900">{c.companyName}</div>
-                            <div className="text-xs text-gray-500">{c.subDomain}.gym.service</div>
-                        </div>
-                    )},
-                    { header: 'Contact', accessor: (c) => (
-                        <div className="text-sm">
-                            <div>{c.companyEmail}</div>
-                            <div className="text-gray-500 text-xs">{c.phone}</div>
-                        </div>
-                    )},
+                    {
+                        header: 'Company Name', accessor: (c) => (
+                            <div>
+                                <div className="font-medium text-gray-900">{c.companyName}</div>
+                                <div className="text-xs text-gray-500">{c.subDomain}.gym.service</div>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Contact', accessor: (c) => (
+                            <div className="text-sm">
+                                <div>{c.companyEmail}</div>
+                                <div className="text-gray-500 text-xs">{c.phone}</div>
+                            </div>
+                        )
+                    },
                     { header: 'Manager', accessor: (c) => c.manager },
-                    { header: 'Status', accessor: (c) => (
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${c.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {c.active !== false ? 'Active' : 'Suspended'}
-                        </span>
-                    )}
+                    {
+                        header: 'Status', accessor: (c) => (
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${c.isActivated !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {c.isActivated !== false ? 'Active' : 'Suspended'}
+                            </span>
+                        )
+                    }
                 ]}
-                actions={(c) => (
+                actions={(c: Company) => (
                     <div className="flex items-center justify-end gap-2">
-                         <button 
-                            onClick={() => setViewingCompany(c)} 
+                        <button
+                            onClick={() => setViewingCompany(c)}
                             className="text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors"
                             title="View Details"
                         >
                             <Eye size={16} />
                         </button>
-                         <button 
-                            onClick={() => openEdit(c)} 
+                        <button
+                            onClick={() => openEdit(c)}
                             className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-md transition-colors"
                             title="Edit Company"
                         >
                             <Edit2 size={16} />
                         </button>
-                        <button 
-                            onClick={() => initiateToggle(c)} 
-                            className={`${c.active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'} p-1.5 rounded-md transition-colors`} 
-                            title={c.active ? "Suspend Company" : "Reactivate Company"}
+                        <button
+                            onClick={() => initiateToggle(c)}
+                            className={`${c.isActivated ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'} p-1.5 rounded-md transition-colors`}
+                            title={c.isActivated ? "Suspend Company" : "Reactivate Company"}
                         >
-                            {c.active ? <Power size={16} /> : <CheckCircle2 size={16} />}
+                            {c.isActivated ? <Power size={16} /> : <CheckCircle2 size={16} />}
                         </button>
                         <button onClick={() => handleDelete(c.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="Delete"><Trash2 size={16} /></button>
                     </div>
@@ -656,17 +664,18 @@ const CompaniesPage = () => {
                             <div className="bg-gray-50 rounded-lg p-4">
                                 <CopyableDetail label="Account Name" value={viewingCompany.accountName} />
                                 <CopyableDetail label="Account Number" value={viewingCompany.accountNumber} />
-                                <CopyableDetail label="Subscription Months" value={viewingCompany.subscriptionMonths} />
+                                <CopyableDetail label="Subscription Start" value={viewingCompany.companySubscriptionStartDate || 'N/A'} />
+                                <CopyableDetail label="Subscription End" value={viewingCompany.companySubscriptionEndDate || 'N/A'} />
                             </div>
                         </div>
 
-                         <div>
+                        <div>
                             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">System Settings</h3>
                             <div className="bg-gray-50 rounded-lg p-4">
                                 <CopyableDetail label="Preferred Language" value={viewingCompany.preferredLanguage} />
                                 <CopyableDetail label="Message Status" value={viewingCompany.messageStatus} />
                                 <CopyableDetail label="SMS Enabled" value={viewingCompany.isSmsEnabled ? 'Yes' : 'No'} />
-                                <CopyableDetail label="Current Status" value={viewingCompany.active ? 'Active' : 'Suspended'} />
+                                <CopyableDetail label="Current Status" value={viewingCompany.isActivated ? 'Active' : 'Suspended'} />
                             </div>
                         </div>
                     </div>
@@ -679,41 +688,41 @@ const CompaniesPage = () => {
                     <div>
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Company Details</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <input type="text" placeholder="Company Name" required className={inputClasses} value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} />
-                            <input type="text" placeholder="Subdomain" required className={inputClasses} value={formData.subDomain} onChange={e => setFormData({...formData, subDomain: e.target.value})} />
-                            <input type="email" placeholder="Email" required className={inputClasses} value={formData.companyEmail} onChange={e => setFormData({...formData, companyEmail: e.target.value})} />
-                            <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                            <input type="text" placeholder="TIN" required className={inputClasses} value={formData.tin} onChange={e => setFormData({...formData, tin: e.target.value})} />
-                            <input type="text" placeholder="Website" className={inputClasses} value={formData.website} onChange={e => setFormData({...formData, website: e.target.value})} />
+                            <input type="text" placeholder="Company Name" required className={inputClasses} value={formData.companyName} onChange={e => setFormData({ ...formData, companyName: e.target.value })} />
+                            <input type="text" placeholder="Subdomain" required className={inputClasses} value={formData.subDomain} onChange={e => setFormData({ ...formData, subDomain: e.target.value })} />
+                            <input type="email" placeholder="Email" required className={inputClasses} value={formData.companyEmail} onChange={e => setFormData({ ...formData, companyEmail: e.target.value })} />
+                            <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} />
+                            <input type="text" placeholder="TIN" required className={inputClasses} value={formData.tin} onChange={e => setFormData({ ...formData, tin: e.target.value })} />
+                            <input type="text" placeholder="Website" className={inputClasses} value={formData.website} onChange={e => setFormData({ ...formData, website: e.target.value })} />
                         </div>
-                        <input type="text" placeholder="Address" required className={`${inputClasses} mt-4`} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-                         <textarea placeholder="Description" className={`${inputClasses} mt-4`} rows={2} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                        <input type="text" placeholder="Address" required className={`${inputClasses} mt-4`} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+                        <textarea placeholder="Description" className={`${inputClasses} mt-4`} rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
                     </div>
-                    
+
                     <div>
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Management & Billing</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <input type="text" placeholder="Founder Name" required className={inputClasses} value={formData.founder} onChange={e => setFormData({...formData, founder: e.target.value})} />
-                            <input type="text" placeholder="Manager Name" required className={inputClasses} value={formData.manager} onChange={e => setFormData({...formData, manager: e.target.value})} />
-                            <input type="text" placeholder="Account Name" required className={inputClasses} value={formData.accountName} onChange={e => setFormData({...formData, accountName: e.target.value})} />
-                            <input type="text" placeholder="Account Number" required className={inputClasses} value={formData.accountNumber} onChange={e => setFormData({...formData, accountNumber: e.target.value})} />
+                            <input type="text" placeholder="Founder Name" required className={inputClasses} value={formData.founder} onChange={e => setFormData({ ...formData, founder: e.target.value })} />
+                            <input type="text" placeholder="Manager Name" required className={inputClasses} value={formData.manager} onChange={e => setFormData({ ...formData, manager: e.target.value })} />
+                            <input type="text" placeholder="Account Name" required className={inputClasses} value={formData.accountName} onChange={e => setFormData({ ...formData, accountName: e.target.value })} />
+                            <input type="text" placeholder="Account Number" required className={inputClasses} value={formData.accountNumber} onChange={e => setFormData({ ...formData, accountNumber: e.target.value })} />
                         </div>
                     </div>
 
                     <div>
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Settings</h3>
                         <div className="flex gap-4 items-center flex-wrap">
-                            <select className={inputClasses} style={{ width: 'auto' }} value={formData.preferredLanguage} onChange={e => setFormData({...formData, preferredLanguage: e.target.value})}>
+                            <select className={inputClasses} style={{ width: 'auto' }} value={formData.preferredLanguage} onChange={e => setFormData({ ...formData, preferredLanguage: e.target.value })}>
                                 <option value="EN">English</option>
                                 <option value="SW">Swahili</option>
                             </select>
                             <label className="flex items-center gap-2 text-sm text-gray-700">
-                                <input type="checkbox" checked={formData.isSmsEnabled} onChange={e => setFormData({...formData, isSmsEnabled: e.target.checked})} />
+                                <input type="checkbox" checked={formData.isSmsEnabled} onChange={e => setFormData({ ...formData, isSmsEnabled: e.target.checked })} />
                                 SMS Enabled
                             </label>
                             <div className="flex items-center gap-2">
                                 <span className="text-sm text-gray-600">Sub Months:</span>
-                                <input type="number" placeholder="Sub Months" className={`${inputClasses} w-24`} value={formData.subscriptionMonths} onChange={e => setFormData({...formData, subscriptionMonths: parseInt(e.target.value)})} />
+                                <input type="number" placeholder="Sub Months" className={`${inputClasses} w-24`} value={formData.subscriptionMonths} onChange={e => setFormData({ ...formData, subscriptionMonths: parseInt(e.target.value) })} />
                             </div>
                         </div>
                     </div>
@@ -731,15 +740,15 @@ const CompaniesPage = () => {
             <Modal isOpen={reasonModalOpen} onClose={() => setReasonModalOpen(false)} title={toggleAction === 'activate' ? "Reactivate Company" : "Suspend Company"}>
                 <div className="space-y-4">
                     <p className="text-gray-600">
-                        {toggleAction === 'activate' 
+                        {toggleAction === 'activate'
                             ? "Are you sure you want to reactivate this company? They will regain access to the platform."
                             : "Are you sure you want to suspend this company? Their access will be revoked."}
                     </p>
                     <div className="space-y-2">
-                         <label className="text-sm font-medium text-gray-700">Reason for {toggleAction === 'activate' ? 'reactivation' : 'suspension'}</label>
-                        <textarea 
-                            className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900" 
-                            rows={3} 
+                        <label className="text-sm font-medium text-gray-700">Reason for {toggleAction === 'activate' ? 'reactivation' : 'suspension'}</label>
+                        <textarea
+                            className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900"
+                            rows={3}
                             placeholder={toggleAction === 'activate' ? "e.g., Payment received, Issue resolved..." : "e.g., Billing issue, Violation of terms..."}
                             value={toggleReason}
                             onChange={e => setToggleReason(e.target.value)}
@@ -747,8 +756,8 @@ const CompaniesPage = () => {
                     </div>
                     <div className="flex justify-end gap-3">
                         <button onClick={() => setReasonModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700">Cancel</button>
-                        <button 
-                            onClick={handleToggleConfirm} 
+                        <button
+                            onClick={handleToggleConfirm}
                             className={`px-4 py-2 text-white rounded-lg shadow-sm ${toggleAction === 'activate' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
                         >
                             {toggleAction === 'activate' ? "Reactivate" : "Suspend"}
@@ -770,7 +779,7 @@ const UsersPage = () => {
     const [reasonModalOpen, setReasonModalOpen] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [toggleReason, setToggleReason] = useState('');
-    
+
     // Create User Form Data - Requires Company ID
     const [formData, setFormData] = useState<CreateUserRequest & { companyId: string }>({
         name: '', email: '', password: '', phoneNumber: '', role: 'ADMIN', companyId: ''
@@ -784,8 +793,8 @@ const UsersPage = () => {
                 setUsers(pageData.content);
                 setTotalPages(pageData.totalPages);
             } else {
-                 setUsers(Array.isArray(res.data) ? res.data : []);
-                 setTotalPages(1);
+                setUsers(Array.isArray(res.data) ? res.data : []);
+                setTotalPages(1);
             }
         } catch (error) { console.error(error); }
     }, [page]);
@@ -797,8 +806,8 @@ const UsersPage = () => {
         try {
             // Need to pass companyId as number
             await api.users.create(parseInt(formData.companyId), {
-                name: formData.name, email: formData.email, 
-                password: formData.password, phoneNumber: formData.phoneNumber, 
+                name: formData.name, email: formData.email,
+                password: formData.password, phoneNumber: formData.phoneNumber,
                 role: formData.role
             });
             setIsModalOpen(false);
@@ -829,14 +838,14 @@ const UsersPage = () => {
             fetchUsers();
         } catch (e) { alert("Delete failed"); }
     };
-    
+
     const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none";
 
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">Platform Users</h1>
-                <button 
+                <button
                     onClick={() => setIsModalOpen(true)}
                     className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm"
                 >
@@ -844,27 +853,33 @@ const UsersPage = () => {
                 </button>
             </div>
 
-            <DataTable 
+            <DataTable<User>
                 data={users}
                 pagination={{ page, totalPages, onPageChange: setPage }}
                 columns={[
-                    { header: 'User', accessor: (u) => (
-                        <div>
-                            <div className="font-medium text-gray-900">{u.name}</div>
-                            <div className="text-xs text-gray-500">{u.email}</div>
-                        </div>
-                    )},
-                    { header: 'Role', accessor: (u) => (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded border border-gray-200">{u.role}</span>
-                    )},
+                    {
+                        header: 'User', accessor: (u) => (
+                            <div>
+                                <div className="font-medium text-gray-900">{u.name}</div>
+                                <div className="text-xs text-gray-500">{u.email}</div>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Role', accessor: (u) => (
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded border border-gray-200">{u.role}</span>
+                        )
+                    },
                     { header: 'Company ID', accessor: (u) => u.companyId || 'N/A' },
-                    { header: 'Status', accessor: (u) => (
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {u.active !== false ? 'Active' : 'Inactive'}
-                        </span>
-                    )}
+                    {
+                        header: 'Status', accessor: (u) => (
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {u.active !== false ? 'Active' : 'Inactive'}
+                            </span>
+                        )
+                    }
                 ]}
-                actions={(u) => (
+                actions={(u: User) => (
                     <div className="flex items-center justify-end gap-2">
                         <button onClick={() => initiateToggle(u.id)} className="text-orange-600 hover:bg-orange-50 p-1.5 rounded-md" title="Toggle Status"><Power size={16} /></button>
                         <button onClick={() => handleDelete(u.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded-md" title="Delete"><Trash2 size={16} /></button>
@@ -875,30 +890,30 @@ const UsersPage = () => {
             {/* Create User Modal */}
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create User">
                 <form onSubmit={handleCreate} className="space-y-4">
-                     <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg flex gap-2 items-start">
+                    <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg flex gap-2 items-start">
                         <AlertTriangle className="text-yellow-600 shrink-0 mt-0.5" size={16} />
                         <p className="text-xs text-yellow-800">You are creating a user directly. You must provide a valid Company ID (e.g., from the Companies list) to associate this user.</p>
-                     </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <input type="text" placeholder="Full Name" required className={inputClasses} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                        <input type="email" placeholder="Email" required className={inputClasses} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-                     </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phoneNumber} onChange={e => setFormData({...formData, phoneNumber: e.target.value})} />
-                        <input type="password" placeholder="Password" required className={inputClasses} value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-                     </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <select className={inputClasses} value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <input type="text" placeholder="Full Name" required className={inputClasses} value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                        <input type="email" placeholder="Email" required className={inputClasses} value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phoneNumber} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} />
+                        <input type="password" placeholder="Password" required className={inputClasses} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <select className={inputClasses} value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
                             <option value="ADMIN">ADMIN</option>
                             <option value="MANAGER">MANAGER</option>
                             <option value="TRAINER">TRAINER</option>
                         </select>
-                        <input type="number" placeholder="Company ID (Required)" required className={inputClasses} value={formData.companyId} onChange={e => setFormData({...formData, companyId: e.target.value})} />
-                     </div>
-                     <div className="flex justify-end gap-3 pt-4">
+                        <input type="number" placeholder="Company ID (Required)" required className={inputClasses} value={formData.companyId} onChange={e => setFormData({ ...formData, companyId: e.target.value })} />
+                    </div>
+                    <div className="flex justify-end gap-3 pt-4">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700">Cancel</button>
                         <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Create User</button>
-                     </div>
+                    </div>
                 </form>
             </Modal>
 
@@ -906,9 +921,9 @@ const UsersPage = () => {
             <Modal isOpen={reasonModalOpen} onClose={() => setReasonModalOpen(false)} title="Deactivate/Activate User">
                 <div className="space-y-4">
                     <p className="text-gray-600">Please provide a reason for this action.</p>
-                    <textarea 
-                        className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900" 
-                        rows={3} 
+                    <textarea
+                        className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900"
+                        rows={3}
                         placeholder="Reason..."
                         value={toggleReason}
                         onChange={e => setToggleReason(e.target.value)}
@@ -946,8 +961,8 @@ const DashboardLayout = () => {
     };
 
     return (
-        <Layout 
-            activeTab={activeTab} 
+        <Layout
+            activeTab={activeTab}
             onNavigate={(tab) => navigate(`/${tab}`)}
             onLogout={handleLogout}
             userRole={localStorage.getItem('role') || 'SUPER_ADMIN'}
@@ -964,21 +979,21 @@ const DashboardLayout = () => {
 };
 
 const App: React.FC = () => {
-  return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route 
-            path="/*" 
-            element={
-                <ProtectedRoute>
-                    <DashboardLayout />
-                </ProtectedRoute>
-            } 
-        />
-      </Routes>
-    </HashRouter>
-  );
+    return (
+        <HashRouter>
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route
+                    path="/*"
+                    element={
+                        <ProtectedRoute>
+                            <DashboardLayout />
+                        </ProtectedRoute>
+                    }
+                />
+            </Routes>
+        </HashRouter>
+    );
 };
 
 export default App;

@@ -25,6 +25,7 @@ export interface User {
 
 export interface Company {
   id: number;
+  logo: string | null;
   companyName: string;
   subDomain: string;
   companyEmail: string;
@@ -40,8 +41,26 @@ export interface Company {
   preferredLanguage: string;
   messageStatus: string;
   isSmsEnabled: boolean;
-  subscriptionMonths: number;
-  active: boolean; // Inferred
+  smsEnabled: boolean;
+  smsCount: number;
+  remainingSmsCount: number;
+  membersCurrentTotalCredits: number;
+  companySenderId: string | null;
+  smsPackageName: string;
+  smsPackageProviderName: string;
+
+  // Subscription fields
+  companySubscriptionStartDate: string | null;
+  companySubscriptionEndDate: string | null;
+  expiryDate: string;
+
+  // Timestamps & Status
+  createdAt: string;
+  updatedAt: string;
+  isActivated: boolean;
+  activatedAt: string;
+  deactivatedAt: string | null;
+  deactivationReason: string | null;
 }
 
 export interface ApiResponse<T> {

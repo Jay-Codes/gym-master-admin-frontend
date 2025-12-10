@@ -1,5 +1,5 @@
-import { 
-  ApiResponse, SuperAdmin, User, Company, 
+import {
+  ApiResponse, SuperAdmin, User, Company,
   CreateSuperAdminRequest, CreateUserRequest, CreateCompanyRequest,
   PageableResponse, ActivationRequest
 } from '../types';
@@ -42,57 +42,57 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   auth: {
-    login: (credentials: {email: string; password: string}) => 
-      request<{token: string; role: string}>('/api/superadmin/auth/login', {
+    login: (credentials: { email: string; password: string }) =>
+      request<{ token: string; role: string }>('/api/superadmin/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials)
       }),
-    logout: () => 
+    logout: () =>
       request<null>('/api/superadmin/auth/logout', { method: 'POST' }),
-    validate: () => 
-      request<{role: string}>('/api/superadmin/auth/validate', { method: 'GET' })
+    validate: () =>
+      request<{ role: string }>('/api/superadmin/auth/validate', { method: 'GET' })
   },
 
   superAdmin: {
-    create: (data: CreateSuperAdminRequest) => 
+    create: (data: CreateSuperAdminRequest) =>
       request<SuperAdmin>('/api/superadmin/create', {
         method: 'POST',
         body: JSON.stringify(data)
       }),
-    list: () => 
+    list: () =>
       request<SuperAdmin[]>('/api/superadmin/list', { method: 'GET' }),
-    get: (id: number) => 
+    get: (id: number) =>
       request<SuperAdmin>(`/api/superadmin/${id}`, { method: 'GET' }),
-    update: (id: number, data: CreateSuperAdminRequest) => 
+    update: (id: number, data: CreateSuperAdminRequest) =>
       request<SuperAdmin>(`/api/superadmin/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data)
       }),
-    toggleStatus: (id: number) => 
+    toggleStatus: (id: number) =>
       request<SuperAdmin>(`/api/superadmin/${id}/toggle-status`, { method: 'PATCH' })
   },
 
   users: {
-    create: (companyId: number, data: CreateUserRequest) => 
+    create: (companyId: number, data: CreateUserRequest) =>
       request<User>(`/api/superadmin/users/create?companyId=${companyId}`, {
         method: 'POST',
         body: JSON.stringify(data)
       }),
-    list: (page = 0, size = 20) => 
+    list: (page = 0, size = 20) =>
       request<PageableResponse<User>>(`/api/superadmin/users?page=${page}&size=${size}`, { method: 'GET' }),
-    toggleActivation: (id: number, reason: string) => 
+    toggleActivation: (id: number, reason: string) =>
       request<User>(`/api/superadmin/users/${id}/toggle-activation`, {
         method: 'PATCH',
         body: JSON.stringify({ reason })
       }),
-    delete: (id: number) => 
+    delete: (id: number) =>
       request<void>(`/api/superadmin/users/${id}`, { method: 'DELETE' }),
-    status: (id: number) => 
+    status: (id: number) =>
       request<boolean>(`/api/superadmin/users/${id}/status`, { method: 'GET' })
   },
 
   companies: {
-    create: (data: CreateCompanyRequest) => 
+    create: (data: CreateCompanyRequest) =>
       request<Company>('/api/superadmin/companies/create', {
         method: 'POST',
         body: JSON.stringify(data)
@@ -102,19 +102,27 @@ export const api = {
       console.warn("Backend API does not support updating companies.");
       throw new Error("Update functionality is not available on the server.");
     },
-    list: (page = 0, size = 20, search = '', status = 'ALL') => {
+    list: async (page = 0, size = 20, search = '', status = 'ALL') => {
       // The provided backend documentation does not include search or status filtering parameters for the list endpoint.
       // We only pass pagination parameters.
-      return request<PageableResponse<Company>>(`/api/superadmin/companies?page=${page}&size=${size}`, { method: 'GET' });
+      const response = await request<any>(`/api/superadmin/companies?page=${page}&size=${size}`, { method: 'GET' });
+
+      // The API returns a wrapped response: { data: [ { success: true, ... } ] }
+      // We need to extract the first item from the data array which contains the actual ApiResponse
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data[0] as ApiResponse<PageableResponse<Company>>;
+      }
+
+      throw new Error("Unexpected API response format for companies list");
     },
-    toggleActivation: (id: number, reason: string) => 
+    toggleActivation: (id: number, reason: string) =>
       request<Company>(`/api/superadmin/companies/${id}/toggle-activation`, {
         method: 'PATCH',
         body: JSON.stringify({ reason })
       }),
-    delete: (id: number) => 
+    delete: (id: number) =>
       request<void>(`/api/superadmin/companies/${id}`, { method: 'DELETE' }),
-    status: (id: number) => 
+    status: (id: number) =>
       request<boolean>(`/api/superadmin/companies/${id}/status`, { method: 'GET' })
   }
 };
