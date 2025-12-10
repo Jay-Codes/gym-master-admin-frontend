@@ -59,8 +59,13 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data)
       }),
-    list: () =>
-      request<SuperAdmin[]>('/api/superadmin/list', { method: 'GET' }),
+    list: async () => {
+      const response = await request<any>('/api/superadmin/list', { method: 'GET' });
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data[0] as ApiResponse<SuperAdmin[]>;
+      }
+      throw new Error("Unexpected API response format for superadmin list");
+    },
     get: (id: number) =>
       request<SuperAdmin>(`/api/superadmin/${id}`, { method: 'GET' }),
     update: (id: number, data: CreateSuperAdminRequest) =>

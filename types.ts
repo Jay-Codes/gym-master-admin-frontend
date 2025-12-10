@@ -10,7 +10,15 @@ export interface SuperAdmin {
   email: string;
   fullName: string;
   phoneNumber: string;
-  active: boolean; // Inferred from toggle status endpoint
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLogin: string;
+  enabled: boolean;
+  authorities: { authority: string }[];
+  accountNonExpired: boolean;
+  accountNonLocked: boolean;
+  credentialsNonExpired: boolean;
 }
 
 export interface User {

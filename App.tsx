@@ -345,8 +345,8 @@ const SuperAdminsPage = () => {
                     { header: 'Phone', accessor: (sa) => sa.phoneNumber },
                     {
                         header: 'Status', accessor: (sa) => (
-                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${sa.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                {sa.active !== false ? 'Active' : 'Inactive'}
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${sa.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {sa.isActive ? 'Active' : 'Inactive'}
                             </span>
                         )
                     }
