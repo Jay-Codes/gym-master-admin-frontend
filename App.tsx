@@ -419,7 +419,7 @@ const CompaniesPage = () => {
         companyName: '', subDomain: '', companyEmail: '', tin: '', description: '',
         address: '', phone: '', website: '', founder: '', manager: '',
         accountName: '', accountNumber: '', preferredLanguage: 'EN',
-        messageStatus: 'ENABLED', isSmsEnabled: true, subscriptionMonths: 12
+        messageStatus: 'enabled', isSmsEnabled: true, subscriptionMonths: 6
     };
     const [formData, setFormData] = useState<CreateCompanyRequest>(initialForm);
 
@@ -715,6 +715,10 @@ const CompaniesPage = () => {
                             <select className={inputClasses} style={{ width: 'auto' }} value={formData.preferredLanguage} onChange={e => setFormData({ ...formData, preferredLanguage: e.target.value })}>
                                 <option value="EN">English</option>
                                 <option value="SW">Swahili</option>
+                            </select>
+                            <select className={inputClasses} style={{ width: 'auto' }} value={formData.messageStatus} onChange={e => setFormData({ ...formData, messageStatus: e.target.value })}>
+                                <option value="enabled">Message: Enabled</option>
+                                <option value="disabled">Message: Disabled</option>
                             </select>
                             <label className="flex items-center gap-2 text-sm text-gray-700">
                                 <input type="checkbox" checked={formData.isSmsEnabled} onChange={e => setFormData({ ...formData, isSmsEnabled: e.target.checked })} />
