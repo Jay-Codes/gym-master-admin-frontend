@@ -870,11 +870,11 @@ const UsersPage = () => {
                             <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded border border-gray-200">{u.role}</span>
                         )
                     },
-                    { header: 'Company ID', accessor: (u) => u.companyId || 'N/A' },
+                    { header: 'Company ID', accessor: (u) => u.companyProfile?.id || 'N/A' },
                     {
                         header: 'Status', accessor: (u) => (
-                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                {u.active !== false ? 'Active' : 'Inactive'}
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.isActivated !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {u.isActivated !== false ? 'Active' : 'Inactive'}
                             </span>
                         )
                     }

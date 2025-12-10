@@ -78,8 +78,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data)
       }),
-    list: (page = 0, size = 20) =>
-      request<PageableResponse<User>>(`/api/superadmin/users?page=${page}&size=${size}`, { method: 'GET' }),
+    list: async (page = 0, size = 20) => {
+      const response = await request<any>(`/api/superadmin/users?page=${page}&size=${size}`, { method: 'GET' });
+
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data[0] as ApiResponse<PageableResponse<User>>;
+      }
+
+      throw new Error("Unexpected API response format for users list");
+    },
     toggleActivation: (id: number, reason: string) =>
       request<User>(`/api/superadmin/users/${id}/toggle-activation`, {
         method: 'PATCH',

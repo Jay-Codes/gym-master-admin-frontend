@@ -19,8 +19,27 @@ export interface User {
   email: string;
   phoneNumber: string;
   role: string;
-  active: boolean;
-  companyId?: number; // Depending on backend response
+  password?: string;
+  image: string | null;
+
+  // Status & Timestamps
+  isActivated: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  activatedAt: string;
+  deactivatedAt: string | null;
+  deactivationReason: string | null;
+
+  // Auth & Security
+  username: string;
+  authorities: { authority: string }[];
+  accountNonExpired: boolean;
+  accountNonLocked: boolean;
+  credentialsNonExpired: boolean;
+
+  // Relations
+  companyProfile: Company;
 }
 
 export interface Company {
