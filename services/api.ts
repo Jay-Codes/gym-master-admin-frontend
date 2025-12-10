@@ -1,0 +1,120 @@
+import { 
+  ApiResponse, SuperAdmin, User, Company, 
+  CreateSuperAdminRequest, CreateUserRequest, CreateCompanyRequest,
+  PageableResponse, ActivationRequest
+} from '../types';
+
+const BASE_URL = 'http://localhost:7090';
+
+const getHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
+const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> => {
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, {
+      ...options,
+      headers: {
+        ...getHeaders(),
+        ...options.headers,
+      },
+    });
+
+    // Parse JSON. If response is empty (e.g. 204), this might fail, 
+    // but the docs suggest wrapped responses for most endpoints.
+    // For DELETE, if it returns 200 OK with body, it works.
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || `Request failed with status ${response.status}`);
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error(`API Error [${endpoint}]:`, error);
+    throw error;
+  }
+};
+
+export const api = {
+  auth: {
+    login: (credentials: {email: string; password: string}) => 
+      request<{token: string; role: string}>('/api/superadmin/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(credentials)
+      }),
+    logout: () => 
+      request<null>('/api/superadmin/auth/logout', { method: 'POST' }),
+    validate: () => 
+      request<{role: string}>('/api/superadmin/auth/validate', { method: 'GET' })
+  },
+
+  superAdmin: {
+    create: (data: CreateSuperAdminRequest) => 
+      request<SuperAdmin>('/api/superadmin/create', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    list: () => 
+      request<SuperAdmin[]>('/api/superadmin/list', { method: 'GET' }),
+    get: (id: number) => 
+      request<SuperAdmin>(`/api/superadmin/${id}`, { method: 'GET' }),
+    update: (id: number, data: CreateSuperAdminRequest) => 
+      request<SuperAdmin>(`/api/superadmin/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      }),
+    toggleStatus: (id: number) => 
+      request<SuperAdmin>(`/api/superadmin/${id}/toggle-status`, { method: 'PATCH' })
+  },
+
+  users: {
+    create: (companyId: number, data: CreateUserRequest) => 
+      request<User>(`/api/superadmin/users/create?companyId=${companyId}`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    list: (page = 0, size = 20) => 
+      request<PageableResponse<User>>(`/api/superadmin/users?page=${page}&size=${size}`, { method: 'GET' }),
+    toggleActivation: (id: number, reason: string) => 
+      request<User>(`/api/superadmin/users/${id}/toggle-activation`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason })
+      }),
+    delete: (id: number) => 
+      request<void>(`/api/superadmin/users/${id}`, { method: 'DELETE' }),
+    status: (id: number) => 
+      request<boolean>(`/api/superadmin/users/${id}/status`, { method: 'GET' })
+  },
+
+  companies: {
+    create: (data: CreateCompanyRequest) => 
+      request<Company>('/api/superadmin/companies/create', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    update: async (id: number, data: Partial<CreateCompanyRequest>) => {
+      // The provided backend documentation does not include an endpoint for updating companies.
+      console.warn("Backend API does not support updating companies.");
+      throw new Error("Update functionality is not available on the server.");
+    },
+    list: (page = 0, size = 20, search = '', status = 'ALL') => {
+      // The provided backend documentation does not include search or status filtering parameters for the list endpoint.
+      // We only pass pagination parameters.
+      return request<PageableResponse<Company>>(`/api/superadmin/companies?page=${page}&size=${size}`, { method: 'GET' });
+    },
+    toggleActivation: (id: number, reason: string) => 
+      request<Company>(`/api/superadmin/companies/${id}/toggle-activation`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason })
+      }),
+    delete: (id: number) => 
+      request<void>(`/api/superadmin/companies/${id}`, { method: 'DELETE' }),
+    status: (id: number) => 
+      request<boolean>(`/api/superadmin/companies/${id}/status`, { method: 'GET' })
+  }
+};

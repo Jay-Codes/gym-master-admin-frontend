@@ -1,0 +1,5 @@
+{
+  "name": "Gym Services Super Admin",
+  "description": "A comprehensive dashboard for Super Admins to manage admins, companies, and users within the Gym Services ecosystem.",
+  "requestFramePermissions": []
+}
