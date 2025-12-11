@@ -786,7 +786,7 @@ const UsersPage = () => {
 
     // Create User Form Data - Requires Company ID
     const [formData, setFormData] = useState<CreateUserRequest & { companyId: string }>({
-        name: '', email: '', password: '', phoneNumber: '', role: 'ADMIN', companyId: ''
+        name: '', email: '', password: '', phone_number: '', role: 'ADMINISTRATOR', companyId: ''
     });
 
     const fetchUsers = useCallback(async () => {
@@ -811,11 +811,11 @@ const UsersPage = () => {
             // Need to pass companyId as number
             await api.users.create(parseInt(formData.companyId), {
                 name: formData.name, email: formData.email,
-                password: formData.password, phoneNumber: formData.phoneNumber,
+                password: formData.password, phone_number: formData.phone_number,
                 role: formData.role
             });
             setIsModalOpen(false);
-            setFormData({ name: '', email: '', password: '', phoneNumber: '', role: 'ADMIN', companyId: '' });
+            setFormData({ name: '', email: '', password: '', phone_number: '', role: 'ADMINISTRATOR', companyId: '' });
             fetchUsers();
         } catch (e) { alert("Create user failed. Ensure Company ID is valid."); }
     };
@@ -903,14 +903,18 @@ const UsersPage = () => {
                         <input type="email" placeholder="Email" required className={inputClasses} value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phoneNumber} onChange={e => setFormData({ ...formData, phoneNumber: e.target.value })} />
+                        <input type="text" placeholder="Phone" required className={inputClasses} value={formData.phone_number} onChange={e => setFormData({ ...formData, phone_number: e.target.value })} />
                         <input type="password" placeholder="Password" required className={inputClasses} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <select className={inputClasses} value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
-                            <option value="ADMIN">ADMIN</option>
+                        <select className={inputClasses} value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value as any })}>
+                            <option value="admin">admin</option>
+                            <option value="user">user</option>
+                            <option value="USER_ROLE">USER_ROLE</option>
+                            <option value="STAFF">STAFF</option>
+                            <option value="MEMBER">MEMBER</option>
+                            <option value="ADMINISTRATOR">ADMINISTRATOR</option>
                             <option value="MANAGER">MANAGER</option>
-                            <option value="TRAINER">TRAINER</option>
                         </select>
                         <input type="number" placeholder="Company ID (Required)" required className={inputClasses} value={formData.companyId} onChange={e => setFormData({ ...formData, companyId: e.target.value })} />
                     </div>

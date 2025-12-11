@@ -113,12 +113,14 @@ export interface CreateSuperAdminRequest {
   phoneNumber: string;
 }
 
+export type UserRole = 'admin' | 'user' | 'USER_ROLE' | 'STAFF' | 'MEMBER' | 'ADMINISTRATOR' | 'MANAGER';
+
 export interface CreateUserRequest {
   name: string;
   email: string;
   password?: string;
-  phoneNumber: string;
-  role: string;
+  phone_number: string;
+  role: UserRole;
 }
 
 export interface ActivationRequest {
