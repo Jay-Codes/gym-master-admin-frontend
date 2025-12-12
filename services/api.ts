@@ -4,7 +4,7 @@ import {
   PageableResponse, ActivationRequest
 } from '../types';
 
-const BASE_URL = import.meta.env.VITE_BASE_URL || 'http://localhost:7090';
+const BASE_URL = import.meta.env.VITE_BASE_URL ;
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
