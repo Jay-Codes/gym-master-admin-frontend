@@ -1,10 +1,10 @@
 import {
   ApiResponse, SuperAdmin, User, Company,
   CreateSuperAdminRequest, CreateUserRequest, CreateCompanyRequest,
-  PageableResponse, ActivationRequest
+  PageableResponse, ActivationRequest, UpdateMessagingRequest
 } from '../types';
 
-const BASE_URL = import.meta.env.VITE_BASE_URL ;
+const BASE_URL = import.meta.env.VITE_BASE_URL;
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
@@ -131,6 +131,11 @@ export const api = {
       request<Company>(`/api/superadmin/companies/${id}/toggle-activation`, {
         method: 'PATCH',
         body: JSON.stringify({ reason })
+      }),
+    updateMessaging: (id: number, data: UpdateMessagingRequest) =>
+      request<Company>(`/api/superadmin/companies/${id}/messaging`, {
+        method: 'PATCH',
+        body: JSON.stringify(data)
       }),
     delete: (id: number) =>
       request<void>(`/api/superadmin/companies/${id}`, { method: 'DELETE' }),

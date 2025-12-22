@@ -145,3 +145,8 @@ export interface CreateCompanyRequest {
   isSmsEnabled: boolean;
   subscriptionMonths: number;
 }
+
+export interface UpdateMessagingRequest {
+  messageStatus?: 'enabled' | 'disabled';
+  isSmsEnabled?: boolean;
+}

@@ -11,7 +11,7 @@ import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
     Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
-    Eye, Copy, Check, Filter
+    Eye, Copy, Check, Filter, MessageSquare
 } from 'lucide-react';
 
 // --- Helper Components ---
@@ -422,6 +422,9 @@ const CompaniesPage = () => {
         messageStatus: 'enabled', isSmsEnabled: true, subscriptionMonths: 6
     };
     const [formData, setFormData] = useState<CreateCompanyRequest>(initialForm);
+    const [messagingModalOpen, setMessagingModalOpen] = useState(false);
+    const [messagingCompany, setMessagingCompany] = useState<Company | null>(null);
+    const [isUpdatingMessaging, setIsUpdatingMessaging] = useState(false);
 
     const fetchCompanies = useCallback(async () => {
         try {
@@ -506,6 +509,38 @@ const CompaniesPage = () => {
             await api.companies.delete(id);
             fetchCompanies();
         } catch (e) { alert("Delete failed"); }
+    };
+
+    const openMessagingSettings = (company: Company) => {
+        setMessagingCompany(company);
+        setMessagingModalOpen(true);
+    };
+
+    const handleMessagingUpdate = async (status?: 'enabled' | 'disabled', isSms?: boolean) => {
+        if (!messagingCompany) return;
+        setIsUpdatingMessaging(true);
+        try {
+            const payload: any = {};
+            if (status) payload.messageStatus = status;
+            if (isSms !== undefined) payload.isSmsEnabled = isSms;
+
+            await api.companies.updateMessaging(messagingCompany.id, payload);
+            fetchCompanies();
+            // Update local state if it's currently being viewed
+            if (viewingCompany && viewingCompany.id === messagingCompany.id) {
+                const updatedRes = await api.companies.list(page, 10, searchTerm, statusFilter);
+                if (updatedRes.data && 'content' in updatedRes.data) {
+                    const found = (updatedRes.data as any).content.find((c: Company) => c.id === messagingCompany.id);
+                    if (found) setViewingCompany(found);
+                }
+            }
+            // Update the messagingCompany state to reflect changes in the modal
+            setMessagingCompany(prev => prev ? { ...prev, ...payload } : null);
+        } catch (e: any) {
+            alert(e.message || "Failed to update messaging settings");
+        } finally {
+            setIsUpdatingMessaging(false);
+        }
     };
 
     // Reset page when filtering
@@ -606,6 +641,13 @@ const CompaniesPage = () => {
                             title="View Details"
                         >
                             <Eye size={16} />
+                        </button>
+                        <button
+                            onClick={() => openMessagingSettings(c)}
+                            className="text-purple-600 hover:bg-purple-50 p-1.5 rounded-md transition-colors"
+                            title="Messaging Settings"
+                        >
+                            <MessageSquare size={16} />
                         </button>
                         <button
                             onClick={() => openEdit(c)}
@@ -768,6 +810,83 @@ const CompaniesPage = () => {
                         </button>
                     </div>
                 </div>
+            </Modal>
+
+            {/* Messaging Settings Modal */}
+            <Modal isOpen={messagingModalOpen} onClose={() => setMessagingModalOpen(false)} title="Messaging Settings">
+                {messagingCompany && (
+                    <div className="space-y-6">
+                        <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-600 rounded-lg text-white">
+                                    <MessageSquare size={20} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-blue-900">{messagingCompany.companyName}</h4>
+                                    <p className="text-xs text-blue-700">Manage communication features</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+                                <div>
+                                    <h5 className="font-semibold text-gray-900">General Messaging</h5>
+                                    <p className="text-sm text-gray-500">Master switch for all messaging</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleMessagingUpdate('enabled')}
+                                        disabled={isUpdatingMessaging || messagingCompany.messageStatus === 'enabled'}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${messagingCompany.messageStatus === 'enabled'
+                                            ? 'bg-green-600 text-white shadow-sm'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Enabled
+                                    </button>
+                                    <button
+                                        onClick={() => handleMessagingUpdate('disabled')}
+                                        disabled={isUpdatingMessaging || messagingCompany.messageStatus === 'disabled'}
+                                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${messagingCompany.messageStatus === 'disabled'
+                                            ? 'bg-red-600 text-white shadow-sm'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Disabled
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+                                <div>
+                                    <h5 className="font-semibold text-gray-900">SMS Services</h5>
+                                    <p className="text-sm text-gray-500">Enable or disable SMS sending</p>
+                                </div>
+                                <button
+                                    onClick={() => handleMessagingUpdate(undefined, !messagingCompany.isSmsEnabled)}
+                                    disabled={isUpdatingMessaging}
+                                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${messagingCompany.isSmsEnabled
+                                        ? 'bg-blue-600 text-white shadow-md'
+                                        : 'bg-gray-100 text-gray-600 border border-gray-200'
+                                        }`}
+                                >
+                                    {isUpdatingMessaging ? <Loader2 className="animate-spin" size={16} /> : (messagingCompany.isSmsEnabled ? <CheckCircle2 size={16} /> : <XCircle size={16} />)}
+                                    {messagingCompany.isSmsEnabled ? 'SMS Active' : 'SMS Inactive'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="pt-6 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={() => setMessagingModalOpen(false)}
+                                className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 font-medium transition-all shadow-lg"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                )}
             </Modal>
         </div>
     );
