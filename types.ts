@@ -150,3 +150,15 @@ export interface UpdateMessagingRequest {
   messageStatus?: 'enabled' | 'disabled';
   isSmsEnabled?: boolean;
 }
+
+export interface SmsBalanceData {
+  companyId: number;
+  companyName: string;
+  previousBalance: number;
+  newBalance: number;
+}
+
+export interface UpdateSmsBalanceRequest {
+  amount: number;
+  operation: 'ADD' | 'SUBTRACT' | 'SET';
+}

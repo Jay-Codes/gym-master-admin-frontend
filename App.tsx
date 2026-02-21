@@ -5,13 +5,14 @@ import { Modal } from './components/Modal';
 import { api } from './services/api';
 import {
     User, SuperAdmin, Company, PageableResponse,
-    CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest
+    CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest,
+    SmsBalanceData
 } from './types';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
     Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
-    Eye, Copy, Check, Filter, MessageSquare
+    Eye, Copy, Check, Filter, MessageSquare, CreditCard
 } from 'lucide-react';
 
 // --- Helper Components ---
@@ -426,6 +427,14 @@ const CompaniesPage = () => {
     const [messagingCompany, setMessagingCompany] = useState<Company | null>(null);
     const [isUpdatingMessaging, setIsUpdatingMessaging] = useState(false);
 
+    // SMS Balance state
+    const [smsBalanceModalOpen, setSmsBalanceModalOpen] = useState(false);
+    const [smsCompany, setSmsCompany] = useState<Company | null>(null);
+    const [smsBalanceData, setSmsBalanceData] = useState<SmsBalanceData | null>(null);
+    const [smsAmount, setSmsAmount] = useState<number | ''>('');
+    const [smsOperation, setSmsOperation] = useState<'ADD' | 'SUBTRACT' | 'SET'>('ADD');
+    const [isUpdatingSms, setIsUpdatingSms] = useState(false);
+
     const fetchCompanies = useCallback(async () => {
         try {
             const res = await api.companies.list(page, 10, searchTerm, statusFilter);
@@ -543,6 +552,43 @@ const CompaniesPage = () => {
         }
     };
 
+    const openSmsBalance = async (company: Company) => {
+        setSmsCompany(company);
+        setSmsBalanceData(null);
+        setSmsAmount('');
+        setSmsOperation('ADD');
+        setSmsBalanceModalOpen(true);
+        try {
+            const res = await api.companies.getSmsBalance(company.id);
+            if (res.success && res.data) {
+                setSmsBalanceData(res.data);
+            }
+        } catch (e: any) {
+            console.error(e);
+            alert("Failed to fetch SMS balance");
+        }
+    };
+
+    const handleSmsBalanceUpdate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!smsCompany || typeof smsAmount !== 'number' || smsAmount <= 0) return;
+        setIsUpdatingSms(true);
+        try {
+            const res = await api.companies.updateSmsBalance(smsCompany.id, {
+                amount: smsAmount,
+                operation: smsOperation
+            });
+            if (res.success && res.data) {
+                setSmsBalanceData(res.data);
+                setSmsAmount('');
+            }
+        } catch (e: any) {
+            alert(e.message || "Failed to update SMS balance");
+        } finally {
+            setIsUpdatingSms(false);
+        }
+    };
+
     // Reset page when filtering
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
@@ -641,6 +687,13 @@ const CompaniesPage = () => {
                             title="View Details"
                         >
                             <Eye size={16} />
+                        </button>
+                        <button
+                            onClick={() => openSmsBalance(c)}
+                            className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-md transition-colors"
+                            title="SMS Balance"
+                        >
+                            <CreditCard size={16} />
                         </button>
                         <button
                             onClick={() => openMessagingSettings(c)}
@@ -885,6 +938,89 @@ const CompaniesPage = () => {
                                 Done
                             </button>
                         </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* SMS Balance Modal */}
+            <Modal isOpen={smsBalanceModalOpen} onClose={() => setSmsBalanceModalOpen(false)} title="SMS Balance Management">
+                {smsCompany && (
+                    <div className="space-y-6">
+                        <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 mb-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-600 rounded-lg text-white">
+                                    <CreditCard size={20} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-indigo-900">{smsCompany.companyName}</h4>
+                                    <p className="text-xs text-indigo-700">Manage SMS Credits</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white border border-gray-200 rounded-xl p-6 text-center shadow-sm">
+                            <h5 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Current Balance</h5>
+                            {smsBalanceData ? (
+                                <div className="text-4xl font-black text-gray-900">
+                                    {smsBalanceData.newBalance.toLocaleString()} <span className="text-lg text-gray-500 font-medium">credits</span>
+                                </div>
+                            ) : (
+                                <div className="flex justify-center items-center h-12">
+                                    <Loader2 className="animate-spin text-indigo-600" size={24} />
+                                </div>
+                            )}
+                        </div>
+
+                        {smsBalanceData && (
+                            <form onSubmit={handleSmsBalanceUpdate} className="space-y-4">
+                                <div>
+                                    <h5 className="font-semibold text-gray-900 mb-3">Update Balance</h5>
+                                    <div className="grid grid-cols-3 gap-2 mb-4">
+                                        {(['ADD', 'SUBTRACT', 'SET'] as const).map(op => (
+                                            <button
+                                                key={op}
+                                                type="button"
+                                                onClick={() => setSmsOperation(op)}
+                                                className={`py-2 px-3 text-sm font-medium rounded-lg transition-all ${smsOperation === op
+                                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                    }`}
+                                            >
+                                                {op.charAt(0) + op.slice(1).toLowerCase()}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative flex-1">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                required
+                                                placeholder={`Amount to ${smsOperation.toLowerCase()}`}
+                                                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-indigo-500 hover:border-indigo-300 outline-none bg-white text-gray-900 font-medium text-lg"
+                                                value={smsAmount}
+                                                onChange={e => setSmsAmount(e.target.value ? Number(e.target.value) : '')}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="pt-4 flex justify-end">
+                                    <button
+                                        type="submit"
+                                        disabled={isUpdatingSms || !smsAmount || smsAmount <= 0}
+                                        className={`px-6 py-2.5 rounded-lg font-medium transition-all shadow-sm flex items-center gap-2 ${isUpdatingSms || !smsAmount || smsAmount <= 0
+                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                            : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md'
+                                            }`}
+                                    >
+                                        {isUpdatingSms && <Loader2 className="animate-spin" size={16} />}
+                                        Update Balance
+                                    </button>
+                                </div>
+                            </form>
+                        )}
                     </div>
                 )}
             </Modal>
