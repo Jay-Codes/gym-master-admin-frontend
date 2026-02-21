@@ -1,7 +1,8 @@
 import {
   ApiResponse, SuperAdmin, User, Company,
   CreateSuperAdminRequest, CreateUserRequest, CreateCompanyRequest,
-  PageableResponse, ActivationRequest, UpdateMessagingRequest
+  PageableResponse, ActivationRequest, UpdateMessagingRequest,
+  SmsBalanceData, UpdateSmsBalanceRequest
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
@@ -110,9 +111,28 @@ export const api = {
         body: JSON.stringify(data)
       }),
     update: async (id: number, data: Partial<CreateCompanyRequest>) => {
-      // The provided backend documentation does not include an endpoint for updating companies.
-      console.warn("Backend API does not support updating companies.");
-      throw new Error("Update functionality is not available on the server.");
+      const payload = {
+        company_name: data.companyName,
+        company_email: data.companyEmail,
+        tin: data.tin,
+        description: data.description,
+        address: data.address,
+        phone: data.phone,
+        website: data.website,
+        founder: data.founder,
+        manager: data.manager,
+        account_name: data.accountName,
+        account_number: data.accountNumber,
+        is_sms_enabled: data.isSmsEnabled,
+      };
+
+      // Removing undefined fields to avoid sending nulls for unprovided data
+      Object.keys(payload).forEach(key => (payload as any)[key] === undefined && delete (payload as any)[key]);
+
+      return request<Company>(`/api/superadmin/companies/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
     },
     list: async (page = 0, size = 20, search = '', status = 'ALL') => {
       // The provided backend documentation does not include search or status filtering parameters for the list endpoint.
@@ -140,6 +160,27 @@ export const api = {
     delete: (id: number) =>
       request<void>(`/api/superadmin/companies/${id}`, { method: 'DELETE' }),
     status: (id: number) =>
-      request<boolean>(`/api/superadmin/companies/${id}/status`, { method: 'GET' })
+      request<boolean>(`/api/superadmin/companies/${id}/status`, { method: 'GET' }),
+    getSmsBalance: async (id: number) => {
+      const response = await request<any>(`/api/superadmin/companies/${id}/sms-balance`, { method: 'GET' });
+      if (response && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data[0] as ApiResponse<SmsBalanceData>;
+      } else if (response && response.data && 'companyId' in (response as any).data) {
+        return response as ApiResponse<SmsBalanceData>;
+      }
+      throw new Error("Unexpected API response format for getSmsBalance");
+    },
+    updateSmsBalance: async (id: number, data: UpdateSmsBalanceRequest) => {
+      const response = await request<any>(`/api/superadmin/companies/${id}/sms-balance`, {
+        method: 'PATCH',
+        body: JSON.stringify(data)
+      });
+      if (response && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data[0] as ApiResponse<SmsBalanceData>;
+      } else if (response && response.data && 'companyId' in (response as any).data) {
+        return response as ApiResponse<SmsBalanceData>;
+      }
+      throw new Error("Unexpected API response format for updateSmsBalance");
+    }
   }
 };
