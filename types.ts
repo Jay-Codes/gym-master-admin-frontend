@@ -1,6 +1,16 @@
+export type OnboardingStep = 
+  | 'EMAIL_VERIFICATION' 
+  | 'OTP_CONFIRMATION'
+  | 'PASSWORD_CREATION' 
+  | 'COMPANY_STEP_1' 
+  | 'COMPANY_DETAILS' 
+  | 'PHONE_VERIFICATION' 
+  | 'COMPLETED';
+
 export interface AuthResponse {
   token: string;
   role: string;
+  onboarding_step?: OnboardingStep;
   // Add other metadata fields if returned by API
 }
 
@@ -94,6 +104,7 @@ export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
+  token?: string; // Some responses include a JWT token
 }
 
 export interface PageableResponse<T> {
@@ -161,4 +172,213 @@ export interface SmsBalanceData {
 export interface UpdateSmsBalanceRequest {
   amount: number;
   operation: 'ADD' | 'SUBTRACT' | 'SET';
+}
+
+export interface BillingPlan {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  monthlyPriceTzs?: number;
+  annualPriceTzs?: number;
+  trialDays: number;
+  active: boolean;
+  isActive?: boolean; // Keep for internal form state if needed
+  createdAt?: string;
+}
+
+export interface CreatePlanRequest {
+  name: string;
+  code: string;
+  description: string;
+  monthlyPriceTzs: number;
+  annualPriceTzs: number;
+  trialDays: number;
+  active: boolean;
+}
+
+export interface UpdatePlanRequest {
+  planId: string;
+  expiresAt: string;
+  renewalAt: string;
+  reason: string;
+}
+
+export interface PlanAudit {
+  id: number;
+  companyId: number;
+  adminId: number;
+  oldPlanId: string;
+  newPlanId: string;
+  oldExpiresAt: string;
+  newExpiresAt: string;
+  oldRenewalAt: string;
+  newRenewalAt: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface BillingAddon {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  monthlyPriceTzs?: number;
+  annualPriceTzs?: number;
+  active: boolean;   // API returns 'active', not 'isActive'
+  createdAt?: string;
+}
+
+export interface PaymentInitiateRequest {
+  companyProfileId?: number;
+  planId: string;
+  addonIds?: string[];
+  billingPeriod: 'monthly' | 'annually';
+  paymentType: 'mobile' | 'card';
+  phoneNumber?: string;
+  activationCode?: string;
+}
+
+export interface PaymentHistory {
+  id: string;
+  amount: number;
+  status: string;
+  paymentType: string;
+  billingPeriod: string;
+  createdAt: string;
+  companyName?: string;
+}
+
+export interface KazafitAddon {
+  id: string;
+  name: string;
+  amountTzs: number;
+}
+
+export interface KazafitInvoice {
+  id: string;
+  companyProfileId: number;
+  companyName: string;
+  planId: string;
+  planName: string;
+  planCode: string;
+  period: string;
+  amountTzs: number;
+  status: string;
+  issuedAt: string;
+  dueAt: string;
+  nextPaymentAt: string;
+  paidAt: string | null;
+  addons: KazafitAddon[];
+}
+
+export interface PartnerAnalytics {
+  partnersCount: number;
+  totalPartners: number;
+  totalReferralsInPeriod: number;
+  totalIncomeInPeriod: number;
+}
+
+export interface Partner {
+  id: string;
+  activationCode: string;
+  referrerName: string;
+  referrerEmail: string;
+  referrerPhone: string;
+  businessName: string;
+  idType: string | null;
+  idNumber: string | null;
+  idDocumentUrl: string | null;
+  commissionRate: number;
+  commissionType: 'flat' | 'percent';
+  totalReferrals: number;
+  totalCommissionTzs: number;
+  kycStatus: string;
+  userId: number;
+  payoutSchedule: string;
+  onboardingStatus: string;
+  createdAt: string;
+  updatedAt: string;
+  active: boolean;
+  paidCommissionTzs: number;
+  // Legacy fields for compatibility if needed (can be removed once UI is updated)
+  name?: string;
+  email?: string;
+  referralCount?: number;
+  totalEarned?: number;
+  status?: string;
+  commissionSchedule?: string;
+}
+
+export interface OnboardingData {
+  id: number;
+  email: string;
+  onboarding_step: OnboardingStep;
+  companyId?: number;
+}
+
+export interface OnboardingResponse extends ApiResponse<OnboardingData> {
+  token?: string;
+}
+
+export interface CommissionOverrideRequest {
+  rate: number;
+  type: 'flat' | 'percent';
+  schedule: string;
+}
+
+export interface PartnerConfig {
+  defaultCommissionRate: number;
+  defaultCommissionType: 'flat' | 'percent';
+  defaultPayoutSchedule: string;
+}
+
+export interface PartnerHistoryEntry {
+  id: number;
+  partnerId: string;
+  referralsCount: number;
+  incomeGeneratedTzs: number;
+  recordedAt: string;
+  // legacy for compatibility
+  date?: string;
+  referrals?: number;
+  income?: number;
+  status?: string;
+}
+
+export interface PartnerPaymentMethod {
+  id: string;
+  partnerId: string;
+  type: string;
+  provider: string;
+  accountNumber: string;
+  accountName: string;
+  isDefault: boolean;
+}
+
+export type PayoutStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export interface PartnerPayout {
+  id: string;
+  partnerId: string;
+  partnerName?: string;
+  amount: number;
+  paymentMethodId: string;
+  status: PayoutStatus;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePayoutRequest {
+  partnerId: string;
+  amount: number;
+  paymentMethodId: string;
+  notes?: string;
+}
+
+export interface UpdatePayoutStatusRequest {
+  status: PayoutStatus;
+  reference?: string;
 }

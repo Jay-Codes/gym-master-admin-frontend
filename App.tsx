@@ -2,17 +2,24 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Modal } from './components/Modal';
+import { BillingModal } from './components/BillingModal';
 import { api } from './services/api';
 import {
     User, SuperAdmin, Company, PageableResponse,
     CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest,
-    SmsBalanceData
+    SmsBalanceData, BillingPlan, CreatePlanRequest, KazafitInvoice,
+    PartnerAnalytics, Partner, CommissionOverrideRequest,
+    PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod, OnboardingStep,
+    PartnerPayout, PayoutStatus, CreatePayoutRequest, UpdatePayoutStatusRequest
 } from './types';
+import { OnboardingFlow } from './components/OnboardingFlow';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
     Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
-    Eye, Copy, Check, Filter, MessageSquare, CreditCard
+    Eye, Copy, Check, Filter, MessageSquare, CreditCard, Download, FileText,
+    Handshake, DollarSign, TrendingUp, Calendar, Settings, History, Clock,
+    ArrowRight, ArrowUpRight
 } from 'lucide-react';
 
 // --- Helper Components ---
@@ -64,7 +71,17 @@ const Login: React.FC = () => {
             if (data.data && data.data.token) {
                 localStorage.setItem('token', data.data.token);
                 localStorage.setItem('role', data.data.role);
-                navigate('/dashboard');
+                
+                const onboardingStep = (data.data as any).onboarding_step as OnboardingStep;
+                if (onboardingStep) {
+                    localStorage.setItem('onboarding_step', onboardingStep);
+                }
+                
+                if (onboardingStep && onboardingStep !== 'COMPLETED') {
+                    navigate(`/register?step=${onboardingStep}`);
+                } else {
+                    navigate('/dashboard');
+                }
             }
         } catch (err: any) {
             setError(err.message || 'Login failed');
@@ -74,51 +91,67 @@ const Login: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-            <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-6">
+        <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC] px-4 font-sans antialiased">
+            <div className="max-w-md w-full bg-white rounded-[32px] shadow-2xl shadow-blue-100/50 p-10 space-y-8 border border-gray-100 animate-in fade-in zoom-in duration-500">
                 <div className="text-center">
-                    <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4">
-                        <ShieldCheck className="text-white" size={32} />
+                    <div className="w-20 h-20 bg-blue-600 rounded-[24px] mx-auto flex items-center justify-center mb-6 shadow-xl shadow-blue-200 transition-transform hover:scale-110 duration-300">
+                        <ShieldCheck className="text-white" size={40} />
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-900">Super Admin</h1>
-                    <p className="text-gray-500 mt-2">Sign in to manage the platform</p>
+                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">KazaFit</h1>
+                    <p className="text-gray-500 mt-2 font-medium">Elevating Gym Management</p>
                 </div>
                 {error && (
-                    <div className="p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
-                        <XCircle size={16} /> {error}
+                    <div className="p-4 bg-red-50 text-red-700 text-sm rounded-2xl flex items-center gap-3 border border-red-100 animate-shake">
+                        <XCircle size={18} /> {error}
                     </div>
                 )}
-                <form onSubmit={handleLogin} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <form onSubmit={handleLogin} className="space-y-5">
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-bold text-gray-700 ml-1">Gym Admin Email</label>
                         <input
                             type="email"
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
-                            placeholder="admin@example.com"
+                            className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-900 placeholder:text-gray-400"
+                            placeholder="admin@kaza-fit.com"
                         />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-bold text-gray-700 ml-1">Secure Password</label>
                         <input
                             type="password"
                             required
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
+                            className="w-full px-5 py-4 bg-gray-50 border-none rounded-2xl focus:ring-4 focus:ring-blue-100 transition-all font-medium text-gray-900 placeholder:text-gray-400"
                             placeholder="••••••••"
                         />
                     </div>
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        className="w-full bg-gray-900 hover:bg-black text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2 group mt-2"
                     >
-                        {loading ? <Loader2 className="animate-spin" size={18} /> : "Sign In"}
+                        {loading ? <Loader2 className="animate-spin" size={20} /> : (
+                            <>
+                                Sign In to Console 
+                                <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+                            </>
+                        )}
                     </button>
                 </form>
+                <div className="text-center pt-6 border-t border-gray-100">
+                    <p className="text-gray-500 font-medium">
+                        New Gym Owner?{' '}
+                        <button 
+                            onClick={() => navigate('/register')}
+                            className="text-blue-600 font-black hover:underline underline-offset-4"
+                        >
+                            Create an account
+                        </button>
+                    </p>
+                </div>
             </div>
         </div>
     );
@@ -427,6 +460,10 @@ const CompaniesPage = () => {
     const [messagingCompany, setMessagingCompany] = useState<Company | null>(null);
     const [isUpdatingMessaging, setIsUpdatingMessaging] = useState(false);
 
+    // Billing state
+    const [billingModalOpen, setBillingModalOpen] = useState(false);
+    const [billingCompany, setBillingCompany] = useState<Company | null>(null);
+
     // SMS Balance state
     const [smsBalanceModalOpen, setSmsBalanceModalOpen] = useState(false);
     const [smsCompany, setSmsCompany] = useState<Company | null>(null);
@@ -434,6 +471,12 @@ const CompaniesPage = () => {
     const [smsAmount, setSmsAmount] = useState<number | ''>('');
     const [smsOperation, setSmsOperation] = useState<'ADD' | 'SUBTRACT' | 'SET'>('ADD');
     const [isUpdatingSms, setIsUpdatingSms] = useState(false);
+    
+    // Onboarding Override state
+    const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+    const [onboardingCompany, setOnboardingCompany] = useState<Company | null>(null);
+    const [selectedOnboardingStep, setSelectedOnboardingStep] = useState<OnboardingStep>('COMPLETED');
+    const [isUpdatingOnboarding, setIsUpdatingOnboarding] = useState(false);
 
     const fetchCompanies = useCallback(async () => {
         try {
@@ -589,6 +632,20 @@ const CompaniesPage = () => {
         }
     };
 
+    const handleOnboardingUpdate = async () => {
+        if (!onboardingCompany) return;
+        setIsUpdatingOnboarding(true);
+        try {
+            await api.companies.updateOnboardingStatus(onboardingCompany.id, selectedOnboardingStep);
+            setOnboardingModalOpen(false);
+            fetchCompanies();
+        } catch (e: any) {
+            alert(e.message || "Failed to update onboarding status");
+        } finally {
+            setIsUpdatingOnboarding(false);
+        }
+    };
+
     // Reset page when filtering
     const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
@@ -689,6 +746,16 @@ const CompaniesPage = () => {
                             <Eye size={16} />
                         </button>
                         <button
+                            onClick={() => {
+                                setBillingCompany(c);
+                                setBillingModalOpen(true);
+                            }}
+                            className="text-amber-600 hover:bg-amber-50 p-1.5 rounded-md transition-colors"
+                            title="Billing & Subscription"
+                        >
+                            <CreditCard size={16} />
+                        </button>
+                        <button
                             onClick={() => openSmsBalance(c)}
                             className="text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-md transition-colors"
                             title="SMS Balance"
@@ -708,6 +775,16 @@ const CompaniesPage = () => {
                             title="Edit Company"
                         >
                             <Edit2 size={16} />
+                        </button>
+                        <button
+                            onClick={() => {
+                                setOnboardingCompany(c);
+                                setOnboardingModalOpen(true);
+                            }}
+                            className="text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors"
+                            title="Override Onboarding Status"
+                        >
+                            <History size={16} />
                         </button>
                         <button
                             onClick={() => initiateToggle(c)}
@@ -791,7 +868,7 @@ const CompaniesPage = () => {
                             <input type="text" placeholder="Website" className={inputClasses} value={formData.website} onChange={e => setFormData({ ...formData, website: e.target.value })} />
                         </div>
                         <input type="text" placeholder="Address" required className={`${inputClasses} mt-4`} value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
-                        <textarea placeholder="Description" className={`${inputClasses} mt-4`} rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                        <textarea placeholder="Description" className={`${inputClasses} mt-4`} rows={2} value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
                     </div>
 
                     <div>
@@ -849,7 +926,7 @@ const CompaniesPage = () => {
                             className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-gray-900"
                             rows={3}
                             placeholder={toggleAction === 'activate' ? "e.g., Payment received, Issue resolved..." : "e.g., Billing issue, Violation of terms..."}
-                            value={toggleReason}
+                            value={toggleReason || ''}
                             onChange={e => setToggleReason(e.target.value)}
                         />
                     </div>
@@ -962,7 +1039,7 @@ const CompaniesPage = () => {
                             <h5 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Current Balance</h5>
                             {smsBalanceData ? (
                                 <div className="text-4xl font-black text-gray-900">
-                                    {smsBalanceData.newBalance.toLocaleString()} <span className="text-lg text-gray-500 font-medium">credits</span>
+                                    {(smsBalanceData.newBalance || 0).toLocaleString()} <span className="text-lg text-gray-500 font-medium">credits</span>
                                 </div>
                             ) : (
                                 <div className="flex justify-center items-center h-12">
@@ -1021,6 +1098,73 @@ const CompaniesPage = () => {
                                 </div>
                             </form>
                         )}
+                    </div>
+                )}
+            </Modal>
+
+            {/* Billing Modal */}
+            {billingCompany && (
+                <BillingModal
+                    isOpen={billingModalOpen}
+                    onClose={() => {
+                        setBillingModalOpen(false);
+                        setBillingCompany(null);
+                        fetchCompanies(); // Refresh to see updated subscription dates if any
+                    }}
+                    company={billingCompany}
+                />
+            )}
+
+            {/* Onboarding Override Modal */}
+            <Modal isOpen={onboardingModalOpen} onClose={() => setOnboardingModalOpen(false)} title="Override Onboarding Status">
+                {onboardingCompany && (
+                    <div className="space-y-6">
+                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex items-center gap-3">
+                            <div className="p-2 bg-gray-900 rounded-lg text-white">
+                                <History size={20} />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-gray-900">{onboardingCompany.companyName}</h4>
+                                <p className="text-xs text-gray-500">Force onboarding step for all company admins</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-700">Select Target Onboarding Step</label>
+                            <select
+                                className={inputClasses}
+                                value={selectedOnboardingStep}
+                                onChange={(e) => setSelectedOnboardingStep(e.target.value as OnboardingStep)}
+                            >
+                                <option value="EMAIL_VERIFICATION">Email Verification</option>
+                                <option value="PASSWORD_CREATION">Password Creation</option>
+                                <option value="COMPANY_STEP_1">Company Step 1 (Basic Info)</option>
+                                <option value="COMPANY_DETAILS">Company Details (Logo/Address)</option>
+                                <option value="PHONE_VERIFICATION">Phone Verification</option>
+                                <option value="COMPLETED">Completed (Full Access)</option>
+                            </select>
+                            <p className="text-xs text-amber-600 mt-2 font-medium bg-amber-50 p-3 rounded-lg flex items-start gap-2 border border-amber-100">
+                                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                Warning: Manually changing the onboarding status will affect all administrative users of this company. Use this only to bypass verification blocks.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                            <button
+                                onClick={() => setOnboardingModalOpen(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleOnboardingUpdate}
+                                disabled={isUpdatingOnboarding}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 shadow-sm"
+                            >
+                                {isUpdatingOnboarding ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
+                                Apply Override
+                            </button>
+                        </div>
                     </div>
                 )}
             </Modal>
@@ -1201,6 +1345,1467 @@ const UsersPage = () => {
     );
 };
 
+// --- Plans Management ---
+
+const PlansPage = () => {
+    const [plans, setPlans] = useState<BillingPlan[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<BillingPlan | null>(null);
+    const [formData, setFormData] = useState<CreatePlanRequest>({
+        name: '', code: '', description: '', monthlyPriceTzs: 0, annualPriceTzs: 0, trialDays: 0, active: true
+    });
+
+    const fetchPlans = useCallback(async () => {
+        try {
+            const res = await api.superAdmin.plans.list();
+            setPlans(res.data || []);
+        } catch (error) {
+            console.error(error);
+        }
+    }, []);
+
+    useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            if (editingPlan) {
+                await api.superAdmin.plans.update(editingPlan.id, formData);
+            } else {
+                await api.superAdmin.plans.create(formData);
+            }
+            setIsModalOpen(false);
+            setEditingPlan(null);
+            setFormData({ name: '', code: '', description: '', monthlyPriceTzs: 0, annualPriceTzs: 0, trialDays: 0, active: true });
+            fetchPlans();
+        } catch (error) {
+            alert('Operation failed');
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this plan?")) return;
+        try {
+            await api.superAdmin.plans.delete(id);
+            fetchPlans();
+        } catch (error) {
+            alert("Delete failed");
+        }
+    };
+
+    const openEdit = (plan: BillingPlan) => {
+        setEditingPlan(plan);
+        setFormData({
+            name: plan.name,
+            code: plan.code,
+            description: plan.description,
+            monthlyPriceTzs: plan.monthlyPriceTzs,
+            annualPriceTzs: plan.annualPriceTzs,
+            trialDays: plan.trialDays,
+            active: plan.active ?? (plan as any).isActive
+        });
+        setIsModalOpen(true);
+    };
+
+    const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none";
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">Billing Plans</h1>
+                <button
+                    onClick={() => { setEditingPlan(null); setFormData({ name: '', code: '', description: '', monthlyPriceTzs: 0, annualPriceTzs: 0, trialDays: 0, active: true }); setIsModalOpen(true); }}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm"
+                >
+                    <Plus size={18} /> Create Plan
+                </button>
+            </div>
+
+            <DataTable<BillingPlan>
+                data={plans}
+                columns={[
+                    { header: 'Name', accessor: (p) => <div className="font-medium text-gray-900">{p.name}</div> },
+                    { header: 'Code', accessor: (p) => <code className="bg-gray-100 px-1 rounded text-xs">{p.code}</code> },
+                    { header: 'Monthly (TZS)', accessor: (p) => (p.monthlyPriceTzs || 0).toLocaleString() },
+                    { header: 'Annual (TZS)', accessor: (p) => (p.annualPriceTzs || 0).toLocaleString() },
+                    { header: 'Trial', accessor: (p) => `${p.trialDays} days` },
+                    {
+                        header: 'Status', accessor: (p) => (
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${p.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {p.active ? 'Active' : 'Inactive'}
+                            </span>
+                        )
+                    }
+                ]}
+                actions={(p: BillingPlan) => (
+                    <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => openEdit(p)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-md transition-colors"><Edit2 size={16} /></button>
+                        <button onClick={() => handleDelete(p.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded-md transition-colors"><Trash2 size={16} /></button>
+                    </div>
+                )}
+            />
+
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingPlan ? "Edit Plan" : "Create New Plan"}>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Plan Name</label>
+                            <input type="text" required className={inputClasses} value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Plan Code</label>
+                            <input type="text" required className={inputClasses} value={formData.code} onChange={e => setFormData({ ...formData, code: e.target.value })} />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea className={inputClasses} rows={2} value={formData.description || ''} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Price (TZS)</label>
+                            <input type="number" required className={inputClasses} value={formData.monthlyPriceTzs} onChange={e => setFormData({ ...formData, monthlyPriceTzs: Number(e.target.value) })} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Annual Price (TZS)</label>
+                            <input type="number" required className={inputClasses} value={formData.annualPriceTzs} onChange={e => setFormData({ ...formData, annualPriceTzs: Number(e.target.value) })} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Trial Days</label>
+                            <input type="number" required className={inputClasses} value={formData.trialDays} onChange={e => setFormData({ ...formData, trialDays: Number(e.target.value) })} />
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input type="checkbox" id="active" checked={formData.active} onChange={e => setFormData({ ...formData, active: e.target.checked })} />
+                        <label htmlFor="active" className="text-sm font-medium text-gray-700 cursor-pointer">Plan is Active</label>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium bg-white">Cancel</button>
+                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Save Plan</button>
+                    </div>
+                </form>
+            </Modal>
+        </div>
+    );
+};
+
+// --- Invoices Management ---
+
+const InvoicesPage = () => {
+    const [invoices, setInvoices] = useState<KazafitInvoice[]>([]);
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [loading, setLoading] = useState(false);
+
+    const fetchInvoices = useCallback(async () => {
+        setLoading(true);
+        try {
+            const res = await api.superAdmin.invoices.list(page, 10);
+            if (res.data && 'content' in res.data) {
+                const pageData = res.data as unknown as PageableResponse<KazafitInvoice>;
+                setInvoices(pageData.content);
+                setTotalPages(pageData.totalPages);
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    }, [page]);
+
+    useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+    const handleExport = () => {
+        if (invoices.length === 0) {
+            alert("No data to export");
+            return;
+        }
+
+        const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At"];
+        const csvContent = [
+            headers.join(","),
+            ...invoices.map(inv => [
+                inv.id,
+                `"${inv.companyName.replace(/"/g, '""')}"`,
+                `"${inv.planName.replace(/"/g, '""')}"`,
+                inv.period,
+                inv.amountTzs,
+                inv.status,
+                inv.issuedAt,
+                inv.dueAt,
+                inv.paidAt || "N/A"
+            ].join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `kazafit_invoices_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
+                    <p className="text-gray-500 text-sm mt-1">View and export platform-wide invoices</p>
+                </div>
+                <button
+                    onClick={handleExport}
+                    disabled={invoices.length === 0 || loading}
+                    className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50"
+                >
+                    <Download size={18} /> Export CSV
+                </button>
+            </div>
+
+            <DataTable<KazafitInvoice>
+                data={invoices}
+                pagination={{ page, totalPages, onPageChange: setPage }}
+                columns={[
+                    { 
+                        header: 'Invoice ID', 
+                        accessor: (inv) => <span className="font-mono text-xs text-gray-500">{inv.id.slice(0, 8)}...</span> 
+                    },
+                    { 
+                        header: 'Company', 
+                        accessor: (inv) => <div className="font-medium text-gray-900">{inv.companyName}</div> 
+                    },
+                    { 
+                        header: 'Plan', 
+                        accessor: (inv) => (
+                            <div>
+                                <div className="text-sm">{inv.planName}</div>
+                                <div className="text-xs text-gray-400 capitalize">{inv.period}</div>
+                            </div>
+                        )
+                    },
+                    { 
+                        header: 'Amount', 
+                        accessor: (inv) => (
+                            <div className="font-semibold text-gray-900">
+                                {inv.amountTzs.toLocaleString()} <span className="text-[10px] text-gray-400">TZS</span>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Status', 
+                        accessor: (inv) => {
+                            const statusStyles: Record<string, string> = {
+                                'paid': 'bg-green-100 text-green-800',
+                                'pending': 'bg-yellow-100 text-yellow-800',
+                                'overdue': 'bg-red-100 text-red-800',
+                                'cancelled': 'bg-gray-100 text-gray-800',
+                            };
+                            return (
+                                <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full ${statusStyles[inv.status.toLowerCase()] || 'bg-blue-100 text-blue-800'}`}>
+                                    {inv.status}
+                                </span>
+                            );
+                        }
+                    },
+                    { 
+                        header: 'Due Date', 
+                        accessor: (inv) => <div className="text-gray-500">{new Date(inv.dueAt).toLocaleDateString()}</div> 
+                    },
+                ]}
+                actions={(inv: KazafitInvoice) => (
+                    <div className="flex items-center justify-end gap-2">
+                        <button 
+                            onClick={() => {
+                                alert(`Invoice Details: ${inv.id}\nPlan: ${inv.planName}\nAmount: ${inv.amountTzs} TZS`);
+                            }} 
+                            className="text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors"
+                            title="View Details"
+                        >
+                            <Eye size={16} />
+                        </button>
+                    </div>
+                )}
+            />
+        </div>
+    );
+};
+
+// --- Partners Management ---
+
+const PartnersPage = () => {
+    const [partners, setPartners] = useState<Partner[]>([]);
+    const [analytics, setAnalytics] = useState<PartnerAnalytics | null>(null);
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+    const [loading, setLoading] = useState(false);
+    
+    // Period / Date Range State
+    const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month' | 'custom'>('month');
+    const [customRange, setCustomRange] = useState({ start: '', end: '' });
+    
+    // Modal States
+    const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+    const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    
+    const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
+    const [partnerHistory, setPartnerHistory] = useState<PartnerHistoryEntry[]>([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+    const [paymentMethods, setPaymentMethods] = useState<PartnerPaymentMethod[]>([]);
+    const [isPaymentMethodsLoading, setIsPaymentMethodsLoading] = useState(false);
+    const [isPaymentMethodsModalOpen, setIsPaymentMethodsModalOpen] = useState(false);
+
+    const [formData, setFormData] = useState<CommissionOverrideRequest>({
+        rate: 10.0,
+        type: 'percent',
+        schedule: 'Monthly'
+    });
+
+    const [configFormData, setConfigFormData] = useState<PartnerConfig>({
+        defaultCommissionRate: 10.0,
+        defaultCommissionType: 'percent',
+        defaultPayoutSchedule: 'Monthly'
+    });
+
+    const getDateRange = useCallback(() => {
+        const now = new Date();
+        let start = new Date();
+        let end = new Date();
+
+        switch (selectedPeriod) {
+            case 'today':
+                start.setHours(0, 0, 0, 0);
+                end.setHours(23, 59, 59, 999);
+                break;
+            case 'week':
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+                start.setDate(diff);
+                start.setHours(0, 0, 0, 0);
+                break;
+            case 'month':
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case 'custom':
+                if (customRange.start && customRange.end) {
+                    return { start: new Date(customRange.start).toISOString(), end: new Date(customRange.end).toISOString() };
+                }
+                return { start: undefined, end: undefined };
+        }
+        return { start: start.toISOString(), end: end.toISOString() };
+    }, [selectedPeriod, customRange]);
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const range = getDateRange();
+            const [analyticsRes, partnersRes] = await Promise.all([
+                api.superAdmin.partners.getAnalytics(range.start, range.end),
+                api.superAdmin.partners.list(page, 10)
+            ]);
+            
+            if (analyticsRes.success) setAnalytics(analyticsRes.data);
+            
+            if (partnersRes.data && 'content' in partnersRes.data) {
+                const pageData = partnersRes.data as unknown as PageableResponse<Partner>;
+                setPartners(pageData.content);
+                setTotalPages(pageData.totalPages);
+            } else {
+                setPartners(Array.isArray(partnersRes.data) ? partnersRes.data : []);
+                setTotalPages(1);
+            }
+        } catch (error) {
+            console.error("Failed to fetch partner data:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [page, getDateRange]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const fetchHistory = async (partner: Partner) => {
+        setSelectedPartner(partner);
+        setIsHistoryModalOpen(true);
+        setIsHistoryLoading(true);
+        try {
+            const range = getDateRange();
+            const res = await api.superAdmin.partners.getHistory(partner.id, range.start, range.end);
+            if (res.success) {
+                setPartnerHistory(res.data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch partner history:", error);
+        } finally {
+            setIsHistoryLoading(false);
+        }
+    };
+
+    const fetchPaymentMethods = async (partner: Partner) => {
+        setSelectedPartner(partner);
+        setIsPaymentMethodsModalOpen(true);
+        setIsPaymentMethodsLoading(true);
+        try {
+            const res = await api.superAdmin.partners.getPaymentMethods(partner.id);
+            if (res.success) {
+                setPaymentMethods(res.data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch partner payment methods:", error);
+        } finally {
+            setIsPaymentMethodsLoading(false);
+        }
+    };
+
+    const openConfigModal = async () => {
+        try {
+            const res = await api.superAdmin.partners.getConfig();
+            if (res.success && res.data) {
+                setConfigFormData(res.data);
+                setIsConfigModalOpen(true);
+            } else {
+                alert("Failed to retrieve system defaults. Please try again.");
+            }
+        } catch (error: any) {
+            console.error("Failed to fetch partner config:", error);
+            alert(error.message || "Failed to fetch configuration defaults.");
+        }
+    };
+
+    const handleConfigSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await api.superAdmin.partners.updateConfig(configFormData);
+            if (res.success) {
+                setIsConfigModalOpen(false);
+                alert("Global configuration updated successfully.");
+            } else {
+                alert(res.message || "Failed to update configuration defaults.");
+            }
+        } catch (error: any) {
+            alert(error.message || "Failed to update configuration");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleOverrideSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedPartner) return;
+        try {
+            await api.superAdmin.partners.updateCommission(selectedPartner.id, formData);
+            setIsOverrideModalOpen(false);
+            fetchData();
+            alert("Commission override updated successfully. Partner has been notified via email.");
+        } catch (error: any) {
+            alert(error.message || "Failed to update commission override");
+        }
+    };
+
+    const openOverrideModal = (partner: Partner) => {
+        setSelectedPartner(partner);
+        setFormData({
+            rate: partner.commissionRate,
+            type: partner.commissionType,
+            schedule: partner.payoutSchedule || 'Monthly'
+        });
+        setIsOverrideModalOpen(true);
+    };
+
+    const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none";
+
+    return (
+        <div>
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Partner Management</h1>
+                    <p className="text-gray-500 text-sm mt-1">Oversight for platform partners and commission configurations</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                        {(['today', 'week', 'month', 'custom'] as const).map((period) => (
+                            <button
+                                key={period}
+                                onClick={() => setSelectedPeriod(period)}
+                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
+                                    selectedPeriod === period 
+                                    ? 'bg-white text-blue-600 shadow-sm' 
+                                    : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                                {period}
+                            </button>
+                        ))}
+                    </div>
+
+                    <button
+                        onClick={openConfigModal}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-sm"
+                    >
+                        <Settings size={18} className="text-blue-600" />
+                        System Defaults
+                    </button>
+                    
+                    <button
+                        onClick={() => fetchData()}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-gray-200 bg-white"
+                        title="Refresh Data"
+                    >
+                        <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
+                    </button>
+                </div>
+            </div>
+
+            {selectedPeriod === 'custom' && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-400 uppercase">Start Date</label>
+                        <input 
+                            type="date" 
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={customRange.start}
+                            onChange={e => setCustomRange({...customRange, start: e.target.value})}
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-400 uppercase">End Date</label>
+                        <input 
+                            type="date" 
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={customRange.end}
+                            onChange={e => setCustomRange({...customRange, end: e.target.value})}
+                        />
+                    </div>
+                    <button 
+                        onClick={() => fetchData()}
+                        className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-100"
+                    >
+                        Apply Range
+                    </button>
+                </div>
+            )}
+
+            {/* Analytics Section */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Total Partners</h3>
+                        <p className="text-3xl font-black text-gray-900">{analytics?.totalPartners || 0}</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                        <Handshake size={32} />
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Total Referrals</h3>
+                        <p className="text-3xl font-black text-blue-600">{analytics?.totalReferralsInPeriod || 0}</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                        <TrendingUp size={32} />
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Total Income</h3>
+                        <p className="text-3xl font-black text-green-600">
+                            {(analytics?.totalIncomeInPeriod || 0).toLocaleString()} <span className="text-sm font-medium text-gray-400">TZS</span>
+                        </p>
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-xl text-green-600">
+                        <DollarSign size={32} />
+                    </div>
+                </div>
+            </div>
+
+            <DataTable<Partner>
+                data={partners}
+                pagination={{ page, totalPages, onPageChange: setPage }}
+                columns={[
+                    {
+                        header: 'Partner Name',
+                        accessor: (p) => (
+                            <div>
+                                <div className="font-bold text-gray-900">{p.referrerName}</div>
+                                <div className="text-xs text-gray-500">{p.referrerEmail}</div>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Business',
+                        accessor: (p) => <span className="text-gray-700 font-medium">{p.businessName || 'N/A'}</span>
+                    },
+                    {
+                        header: 'Commission',
+                        accessor: (p) => (
+                            <div className="flex items-center gap-2">
+                                <span className="font-semibold text-gray-900">{p.commissionRate}{p.commissionType === 'percent' ? '%' : ' TZS'}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded uppercase font-bold">{p.commissionType}</span>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Schedule',
+                        accessor: (p) => <span className="text-gray-600 text-sm">{p.payoutSchedule || 'Monthly'}</span>
+                    },
+                    {
+                        header: 'Referrals',
+                        accessor: (p) => (
+                            <div className="flex flex-col">
+                                <span className="font-medium text-gray-900">{p.totalReferrals || 0}</span>
+                                <span className="text-[10px] text-gray-400">{(p.totalCommissionTzs || 0).toLocaleString()} TZS</span>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Status',
+                        accessor: (p) => (
+                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full ${p.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {p.active ? 'ACTIVE' : 'INACTIVE'}
+                            </span>
+                        )
+                    }
+                ]}
+                actions={(p: Partner) => (
+                    <div className="flex items-center justify-end gap-2">
+                        <button
+                            onClick={() => fetchHistory(p)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+                            title="View History"
+                        >
+                            <History size={14} /> History
+                        </button>
+                        <button
+                            onClick={() => fetchPaymentMethods(p)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-green-600 hover:bg-green-50 rounded-lg transition-all"
+                            title="Payment Methods"
+                        >
+                            <CreditCard size={14} /> Payments
+                        </button>
+                        <button
+                            onClick={() => openOverrideModal(p)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                            title="Override Commission"
+                        >
+                            <Edit2 size={14} /> Override
+                        </button>
+                    </div>
+                )}
+            />
+
+            {/* Commission Override Modal */}
+            <Modal
+                isOpen={isOverrideModalOpen}
+                onClose={() => setIsOverrideModalOpen(false)}
+                title="Commission Override"
+            >
+                {selectedPartner && (
+                    <form onSubmit={handleOverrideSubmit} className="space-y-6">
+                        <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                            <h4 className="font-bold text-blue-900">{selectedPartner.referrerName}</h4>
+                            <p className="text-xs text-blue-700">Updating commission for this partner will trigger an automated SendPulse notification.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Commission Rate</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        required
+                                        className={inputClasses}
+                                        value={formData.rate}
+                                        onChange={e => setFormData({ ...formData, rate: parseFloat(e.target.value) })}
+                                    />
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">
+                                        {formData.type === 'percent' ? '%' : 'TZS'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Rate Type</label>
+                                <select
+                                    className={inputClasses}
+                                    value={formData.type}
+                                    onChange={e => setFormData({ ...formData, type: e.target.value as 'flat' | 'percent' })}
+                                >
+                                    <option value="flat">Flat</option>
+                                    <option value="percent">Percent</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Payment Schedule</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g. Monthly, Quarterly, Weekly"
+                                className={inputClasses}
+                                value={formData.schedule}
+                                onChange={e => setFormData({ ...formData, schedule: e.target.value })}
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
+                            <button
+                                type="button"
+                                onClick={() => setIsOverrideModalOpen(false)}
+                                className="px-6 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 text-gray-700 font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition-all"
+                            >
+                                Update Commission
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </Modal>
+
+            {/* Global Configuration Modal */}
+            <Modal
+                isOpen={isConfigModalOpen}
+                onClose={() => setIsConfigModalOpen(false)}
+                title="Global Partner Configuration"
+            >
+                <form onSubmit={handleConfigSubmit} className="space-y-6">
+                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-3">
+                        <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                        <div>
+                            <h4 className="font-bold text-amber-900 text-sm">System Defaults</h4>
+                            <p className="text-xs text-amber-700">These settings apply to all new partners upon registration unless overridden individually.</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Default Rate</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    required
+                                    className={inputClasses}
+                                    value={configFormData.defaultCommissionRate}
+                                    onChange={e => setConfigFormData({ ...configFormData, defaultCommissionRate: parseFloat(e.target.value) })}
+                                />
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs uppercase">
+                                    {configFormData.defaultCommissionType === 'percent' ? '%' : 'TZS'}
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Commission Type</label>
+                            <select
+                                className={inputClasses}
+                                value={configFormData.defaultCommissionType}
+                                onChange={e => setConfigFormData({ ...configFormData, defaultCommissionType: e.target.value as 'flat' | 'percent' })}
+                            >
+                                <option value="flat">Flat</option>
+                                <option value="percent">Percent</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Default Payout Schedule</label>
+                        <select
+                            className={inputClasses}
+                            value={configFormData.defaultPayoutSchedule}
+                            onChange={e => setConfigFormData({ ...configFormData, defaultPayoutSchedule: e.target.value })}
+                        >
+                            <option value="Weekly">Weekly</option>
+                            <option value="Monthly">Monthly</option>
+                            <option value="Quarterly">Quarterly</option>
+                            <option value="On Demand">On Demand</option>
+                        </select>
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
+                        <button
+                            type="button"
+                            onClick={() => setIsConfigModalOpen(false)}
+                            className="px-6 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 text-gray-700 font-bold transition-all"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition-all"
+                        >
+                            Save Defaults
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Partner History Modal */}
+            <Modal
+                isOpen={isHistoryModalOpen}
+                onClose={() => setIsHistoryModalOpen(false)}
+                title="Partner Performance History"
+            >
+                {selectedPartner && (
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                            <div>
+                                <h4 className="font-bold text-gray-900">{selectedPartner.referrerName}</h4>
+                                <p className="text-xs text-gray-500">{selectedPartner.referrerEmail}</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 px-2 py-1 rounded-md border border-blue-100">
+                                    {selectedPeriod} View
+                                </span>
+                            </div>
+                        </div>
+
+                        {isHistoryLoading ? (
+                            <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                <div className="relative">
+                                    <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                                    <History className="absolute inset-0 m-auto text-blue-600" size={20} />
+                                </div>
+                                <p className="text-sm font-medium text-gray-500">Retrieving historical data...</p>
+                            </div>
+                        ) : partnerHistory.length === 0 ? (
+                            <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                                <Clock className="mx-auto text-gray-300 mb-2" size={40} />
+                                <p className="text-gray-500 font-medium">No history recorded for this period.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {partnerHistory.map((entry, idx) => (
+                                        <div className="flex items-center justify-between p-4 bg-white border border-gray-100 rounded-xl hover:shadow-md hover:border-blue-100 transition-all group">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-gray-50 rounded-lg group-hover:bg-blue-50 transition-colors">
+                                                    <Calendar size={16} className="text-gray-400 group-hover:text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-sm font-bold text-gray-900">{new Date(entry.recordedAt).toLocaleDateString()}</div>
+                                                    <div className="text-[10px] text-gray-400 font-semibold uppercase">Success</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-6">
+                                                <div className="text-right">
+                                                    <div className="text-[10px] text-gray-400 font-bold uppercase">Referrals</div>
+                                                    <div className="text-sm font-black text-blue-600 flex items-center justify-end gap-1">
+                                                        <Users size={12} /> {entry.referralsCount}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right min-w-[80px]">
+                                                    <div className="text-[10px] text-gray-400 font-bold uppercase">Income</div>
+                                                    <div className="text-sm font-black text-green-600">
+                                                        {entry.incomeGeneratedTzs.toLocaleString()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end pt-4">
+                            <button
+                                onClick={() => setIsHistoryModalOpen(false)}
+                                className="px-6 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 font-bold transition-all shadow-lg"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+            {/* Partner Payment Methods Modal */}
+            <Modal
+                isOpen={isPaymentMethodsModalOpen}
+                onClose={() => setIsPaymentMethodsModalOpen(false)}
+                title="Partner Payout Accounts"
+            >
+                {selectedPartner && (
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                            <div>
+                                <h4 className="font-bold text-gray-900">{selectedPartner.referrerName}</h4>
+                                <p className="text-xs text-gray-500">{selectedPartner.referrerEmail}</p>
+                            </div>
+                            <CreditCard className="text-blue-600" size={24} />
+                        </div>
+
+                        {isPaymentMethodsLoading ? (
+                            <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                                <p className="text-sm font-medium text-gray-500">Retrieving payment methods...</p>
+                            </div>
+                        ) : paymentMethods.length === 0 ? (
+                            <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                                <CreditCard className="mx-auto text-gray-300 mb-2" size={40} />
+                                <p className="text-gray-500 font-medium">No payout accounts registered.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {paymentMethods.map((method) => (
+                                    <div key={method.id} className="relative overflow-hidden p-5 bg-white border border-gray-100 rounded-2xl hover:shadow-xl hover:border-blue-100 transition-all group">
+                                        {method.isDefault && (
+                                            <div className="absolute top-0 right-0 bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-tighter">
+                                                Default
+                                            </div>
+                                        )}
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                                                    <Building2 size={20} className="text-gray-400 group-hover:text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none mb-1">{method.provider}</div>
+                                                    <div className="text-sm font-black text-gray-900">{method.type} ACCOUNT</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs font-medium text-gray-400 uppercase">Account Name</span>
+                                                <span className="text-sm font-bold text-gray-800">{method.accountName}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-xs font-medium text-gray-400 uppercase">Account Number</span>
+                                                <span className="text-sm font-mono font-bold text-blue-600 tracking-wider bg-blue-50 px-2 py-0.5 rounded-md">{method.accountNumber}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end pt-4 border-t border-gray-50">
+                            <button
+                                onClick={() => setIsPaymentMethodsModalOpen(false)}
+                                className="px-8 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 font-bold transition-all shadow-lg active:scale-95 translate-y-0"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+        </div>
+    );
+};
+
+const PayoutsPage = () => {
+    const [payouts, setPayouts] = useState<PartnerPayout[]>([]);
+    const [partners, setPartners] = useState<Partner[]>([]);
+    const [loading, setLoading] = useState(false);
+    
+    // Period / Date Range State
+    const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month' | 'custom'>('month');
+    const [customRange, setCustomRange] = useState({ start: '', end: '' });
+
+    // Modal States
+    const [isInitiateModalOpen, setIsInitiateModalOpen] = useState(false);
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+    const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+    
+    // Form States
+    const [selectedPayout, setSelectedPayout] = useState<PartnerPayout | null>(null);
+    const [statusFormData, setStatusFormData] = useState<UpdatePayoutStatusRequest>({ status: 'PENDING', reference: '' });
+    
+    const [payoutFormData, setPayoutFormData] = useState<CreatePayoutRequest>({
+        partnerId: '',
+        amount: 0,
+        paymentMethodId: '',
+        notes: ''
+    });
+    const [partnerMethods, setPartnerMethods] = useState<PartnerPaymentMethod[]>([]);
+    const [isMethodsLoading, setIsMethodsLoading] = useState(false);
+
+    // Bulk Payout State
+    const [selectedPartnerIds, setSelectedPartnerIds] = useState<string[]>([]);
+    const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+
+    const getDateRange = useCallback(() => {
+        const now = new Date();
+        let start = new Date();
+        let end = new Date();
+
+        switch (selectedPeriod) {
+            case 'today':
+                start.setHours(0, 0, 0, 0);
+                end.setHours(23, 59, 59, 999);
+                break;
+            case 'week':
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                start.setDate(diff);
+                start.setHours(0, 0, 0, 0);
+                break;
+            case 'month':
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case 'custom':
+                if (customRange.start && customRange.end) {
+                    return { start: new Date(customRange.start).toISOString(), end: new Date(customRange.end).toISOString() };
+                }
+                return { start: undefined, end: undefined };
+        }
+        return { start: start.toISOString(), end: end.toISOString() };
+    }, [selectedPeriod, customRange]);
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const range = getDateRange();
+            const [payoutsRes, partnersRes] = await Promise.all([
+                api.superAdmin.partners.payouts.list(range.start, range.end),
+                api.superAdmin.partners.list(0, 1000) // Fetch all partners for selection
+            ]);
+            
+            if (payoutsRes.success) setPayouts(payoutsRes.data);
+            
+            if (partnersRes.data && 'content' in partnersRes.data) {
+                setPartners((partnersRes.data as any).content);
+            } else {
+                setPartners(Array.isArray(partnersRes.data) ? partnersRes.data : []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch payout data:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [getDateRange]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handlePartnerChange = async (partnerId: string) => {
+        setPayoutFormData({ ...payoutFormData, partnerId, paymentMethodId: '' });
+        setPartnerMethods([]);
+        if (!partnerId) return;
+
+        setIsMethodsLoading(true);
+        try {
+            const res = await api.superAdmin.partners.getPaymentMethods(partnerId);
+            if (res.success) {
+                setPartnerMethods(res.data);
+                // Auto-select default or first method
+                const defaultMethod = res.data.find(m => m.isDefault) || res.data[0];
+                if (defaultMethod) {
+                    setPayoutFormData(prev => ({ ...prev, paymentMethodId: defaultMethod.id }));
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch methods:", error);
+        } finally {
+            setIsMethodsLoading(false);
+        }
+    };
+
+    const handleInitiateSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await api.superAdmin.partners.payouts.create(payoutFormData);
+            setIsInitiateModalOpen(false);
+            setPayoutFormData({ partnerId: '', amount: 0, paymentMethodId: '', notes: '' });
+            fetchData();
+            alert("Payout initiated successfully. Status is PENDING.");
+        } catch (error: any) {
+            alert(error.message || "Failed to initiate payout");
+        }
+    };
+
+    const openStatusModal = (payout: PartnerPayout) => {
+        setSelectedPayout(payout);
+        setStatusFormData({ status: payout.status, reference: payout.reference || '' });
+        setIsStatusModalOpen(true);
+    };
+
+    const handleStatusSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedPayout) return;
+        try {
+            await api.superAdmin.partners.payouts.updateStatus(selectedPayout.id, statusFormData);
+            setIsStatusModalOpen(false);
+            fetchData();
+            alert("Payout status updated successfully.");
+        } catch (error: any) {
+            alert(error.message || "Failed to update status");
+        }
+    };
+
+    const handleBulkPayout = async () => {
+        if (selectedPartnerIds.length === 0) return;
+        if (!window.confirm(`Are you sure you want to process payouts for ${selectedPartnerIds.length} partners?`)) return;
+
+        setIsProcessingBulk(true);
+        setBulkProgress({ current: 0, total: selectedPartnerIds.length });
+
+        for (const partnerId of selectedPartnerIds) {
+            const partner = partners.find(p => p.id === partnerId);
+            if (!partner) continue;
+
+            const availableBalance = partner.totalCommissionTzs - (partner.paidCommissionTzs || 0);
+            if (availableBalance <= 0) {
+                setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+                continue;
+            }
+
+            try {
+                // Fetch payment methods to get default
+                const methodsRes = await api.superAdmin.partners.getPaymentMethods(partnerId);
+                const methodId = methodsRes.data?.find(m => m.isDefault)?.id || methodsRes.data?.[0]?.id;
+
+                if (methodId) {
+                    await api.superAdmin.partners.payouts.create({
+                        partnerId,
+                        amount: availableBalance,
+                        paymentMethodId: methodId,
+                        notes: `Bulk payout generated on ${new Date().toLocaleDateString()}`
+                    });
+                }
+            } catch (error) {
+                console.error(`Failed bulk payout for partner ${partnerId}:`, error);
+            }
+            setBulkProgress(prev => ({ ...prev, current: prev.current + 1 }));
+        }
+
+        setIsProcessingBulk(false);
+        setIsBulkModalOpen(false);
+        setSelectedPartnerIds([]);
+        fetchData();
+        alert("Bulk payout processing completed.");
+    };
+
+    const statusStyles: Record<string, string> = {
+        'PENDING': 'bg-yellow-100 text-yellow-800',
+        'PROCESSING': 'bg-blue-100 text-blue-800',
+        'COMPLETED': 'bg-green-100 text-green-800',
+        'FAILED': 'bg-red-100 text-red-800',
+    };
+
+    const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all";
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Partner Payouts</h1>
+                    <p className="text-gray-500 text-sm mt-1">Manage financial settlements and payout history</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+                        {(['today', 'week', 'month', 'custom'] as const).map((period) => (
+                            <button
+                                key={period}
+                                onClick={() => setSelectedPeriod(period)}
+                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
+                                    selectedPeriod === period 
+                                    ? 'bg-white text-blue-600 shadow-sm' 
+                                    : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            >
+                                {period}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <button
+                        onClick={() => setIsBulkModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+                    >
+                        <RefreshCw size={18} />
+                        Bulk Payout
+                    </button>
+
+                    <button
+                        onClick={() => setIsInitiateModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+                    >
+                        <Plus size={18} />
+                        Initiate Payout
+                    </button>
+                    
+                    <button
+                        onClick={() => fetchData()}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-gray-200 bg-white"
+                        title="Refresh Data"
+                    >
+                        <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
+                    </button>
+                </div>
+            </div>
+
+            {selectedPeriod === 'custom' && (
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-400 uppercase">Start</label>
+                        <input type="date" className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm" value={customRange.start} onChange={e => setCustomRange({...customRange, start: e.target.value})} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-400 uppercase">End</label>
+                        <input type="date" className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm" value={customRange.end} onChange={e => setCustomRange({...customRange, end: e.target.value})} />
+                    </div>
+                    <button onClick={() => fetchData()} className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700">Apply</button>
+                </div>
+            )}
+
+            <DataTable<PartnerPayout>
+                data={payouts}
+                columns={[
+                    {
+                        header: 'Partner',
+                        accessor: (p) => (
+                            <div>
+                                <div className="font-bold text-gray-900">{partners.find(pt => pt.id === p.partnerId)?.referrerName || 'Unknown Partner'}</div>
+                                <div className="text-[10px] text-gray-400 font-mono">{p.partnerId}</div>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Amount',
+                        accessor: (p) => (
+                            <div className="font-black text-gray-900">
+                                {p.amount.toLocaleString()} <span className="text-[10px] text-gray-400">TZS</span>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Status',
+                        accessor: (p) => (
+                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-full ${statusStyles[p.status]}`}>
+                                {p.status}
+                            </span>
+                        )
+                    },
+                    {
+                        header: 'Reference',
+                        accessor: (p) => <span className="text-xs font-mono text-gray-500">{p.reference || 'N/A'}</span>
+                    },
+                    {
+                        header: 'Date',
+                        accessor: (p) => (
+                            <div className="text-xs text-gray-500">
+                                <div>{new Date(p.createdAt).toLocaleDateString()}</div>
+                                <div className="text-[10px] text-gray-400">{new Date(p.createdAt).toLocaleTimeString()}</div>
+                            </div>
+                        )
+                    }
+                ]}
+                actions={(p) => (
+                    <button
+                        onClick={() => openStatusModal(p)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                    >
+                        <Settings size={14} /> Manage
+                    </button>
+                )}
+            />
+
+            {/* Initiate Payout Modal */}
+            <Modal isOpen={isInitiateModalOpen} onClose={() => setIsInitiateModalOpen(false)} title="Initiate New Payout">
+                <form onSubmit={handleInitiateSubmit} className="space-y-5">
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Partner</label>
+                        <select
+                            required
+                            className={inputClasses}
+                            value={payoutFormData.partnerId}
+                            onChange={(e) => handlePartnerChange(e.target.value)}
+                        >
+                            <option value="">Choose a partner...</option>
+                            {partners.map(p => (
+                                <option key={p.id} value={p.id}>
+                                    {p.referrerName} (Bal: {(p.totalCommissionTzs - (p.paidCommissionTzs || 0)).toLocaleString()} TZS)
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Amount (TZS)</label>
+                            <input
+                                type="number"
+                                required
+                                className={inputClasses}
+                                value={payoutFormData.amount}
+                                onChange={e => setPayoutFormData({...payoutFormData, amount: parseFloat(e.target.value)})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Payment Method</label>
+                            <select
+                                required
+                                disabled={isMethodsLoading || !payoutFormData.partnerId}
+                                className={inputClasses}
+                                value={payoutFormData.paymentMethodId}
+                                onChange={e => setPayoutFormData({...payoutFormData, paymentMethodId: e.target.value})}
+                            >
+                                <option value="">Select account...</option>
+                                {partnerMethods.map(m => (
+                                    <option key={m.id} value={m.id}>{m.provider} - {m.accountNumber} ({m.type})</option>
+                                ))}
+                            </select>
+                            {isMethodsLoading && <p className="text-[10px] text-blue-500 mt-1 animate-pulse">Loading methods...</p>}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Notes (Optional)</label>
+                        <textarea
+                            className={inputClasses}
+                            rows={2}
+                            placeholder="e.g. Monthly commission for March 2026"
+                            value={payoutFormData.notes}
+                            onChange={e => setPayoutFormData({...payoutFormData, notes: e.target.value})}
+                        />
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <button type="button" onClick={() => setIsInitiateModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 text-gray-700 font-bold">Cancel</button>
+                        <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200">
+                            Create Payout Record
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Status Update Modal */}
+            <Modal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} title="Update Payout Status">
+                {selectedPayout && (
+                    <form onSubmit={handleStatusSubmit} className="space-y-5">
+                        <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                            <div className="text-xs font-bold text-blue-600 uppercase mb-1">Current Payout</div>
+                            <div className="text-sm font-black text-blue-900">{selectedPayout.amount.toLocaleString()} TZS</div>
+                            <div className="text-xs text-blue-700 mt-1">Status: {selectedPayout.status}</div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">New Status</label>
+                            <select
+                                required
+                                className={inputClasses}
+                                value={statusFormData.status}
+                                onChange={e => setStatusFormData({...statusFormData, status: e.target.value as PayoutStatus})}
+                            >
+                                <option value="PENDING">Pending</option>
+                                <option value="PROCESSING">Processing</option>
+                                <option value="COMPLETED">Completed</option>
+                                <option value="FAILED">Failed</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Transaction Reference</label>
+                            <input
+                                type="text"
+                                placeholder="Bank/M-Pesa Reference ID"
+                                className={inputClasses}
+                                value={statusFormData.reference}
+                                onChange={e => setStatusFormData({...statusFormData, reference: e.target.value})}
+                            />
+                            <p className="text-[10px] text-gray-400 mt-1">Required for COMPLETED status tracking</p>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                            <button type="button" onClick={() => setIsStatusModalOpen(false)} className="px-6 py-2 border border-gray-300 rounded-xl hover:bg-gray-50 text-gray-700 font-bold">Cancel</button>
+                            <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200">
+                                Save Status
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </Modal>
+
+            {/* Bulk Payout Modal */}
+            <Modal isOpen={isBulkModalOpen} onClose={() => setIsBulkModalOpen(false)} title="Bulk Payout Processing">
+                <div className="space-y-5">
+                    <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 flex items-start gap-3">
+                        <AlertTriangle className="text-indigo-600 shrink-0 mt-0.5" size={18} />
+                        <div>
+                            <h4 className="font-bold text-indigo-900 text-sm">Automated Settlement</h4>
+                            <p className="text-xs text-indigo-700">Select partners to generate payout records for their full available balance. This uses their default payment method.</p>
+                        </div>
+                    </div>
+
+                    <div className="max-h-[300px] overflow-y-auto space-y-2 border border-gray-100 rounded-xl p-2">
+                        {partners.filter(p => (p.totalCommissionTzs - (p.paidCommissionTzs || 0)) > 0).map(p => (
+                            <label key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedPartnerIds.includes(p.id)}
+                                        onChange={() => {
+                                            setSelectedPartnerIds(prev => 
+                                                prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                                            );
+                                        }}
+                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                    />
+                                    <div>
+                                        <div className="text-sm font-bold text-gray-900">{p.referrerName}</div>
+                                        <div className="text-[10px] text-gray-500">{p.businessName}</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-sm font-black text-indigo-600">{(p.totalCommissionTzs - (p.paidCommissionTzs || 0)).toLocaleString()}</div>
+                                    <div className="text-[10px] text-gray-400 font-bold uppercase">Available</div>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+
+                    {isProcessingBulk && (
+                        <div className="space-y-2">
+                            <div className="flex justify-between text-xs font-bold text-gray-500">
+                                <span>Processing...</span>
+                                <span>{bulkProgress.current} / {bulkProgress.total}</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden border border-gray-200">
+                                <div 
+                                    className="bg-indigo-600 h-full transition-all duration-300"
+                                    style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl text-white">
+                        <div>
+                            <div className="text-[10px] font-bold text-gray-400 uppercase">Selected Total</div>
+                            <div className="text-lg font-black">
+                                {partners
+                                    .filter(p => selectedPartnerIds.includes(p.id))
+                                    .reduce((sum, p) => sum + (p.totalCommissionTzs - (p.paidCommissionTzs || 0)), 0)
+                                    .toLocaleString()
+                                } <span className="text-xs text-gray-400">TZS</span>
+                            </div>
+                        </div>
+                        <button
+                            disabled={selectedPartnerIds.length === 0 || isProcessingBulk}
+                            onClick={handleBulkPayout}
+                            className={`px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${
+                                selectedPartnerIds.length === 0 || isProcessingBulk
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                : 'bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg'
+                            }`}
+                        >
+                            {isProcessingBulk ? <Loader2 className="animate-spin" size={18} /> : <TrendingUp size={18} />}
+                            Process Bulk
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+        </div>
+    );
+};
+
 // --- App Root & Routing ---
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -1236,6 +2841,10 @@ const DashboardLayout = () => {
                 <Route path="/superadmins" element={<SuperAdminsPage />} />
                 <Route path="/companies" element={<CompaniesPage />} />
                 <Route path="/users" element={<UsersPage />} />
+                <Route path="/plans" element={<PlansPage />} />
+                <Route path="/invoices" element={<InvoicesPage />} />
+                <Route path="/partners" element={<PartnersPage />} />
+                <Route path="/payouts" element={<PayoutsPage />} />
             </Routes>
         </Layout>
     );
@@ -1246,6 +2855,7 @@ const App: React.FC = () => {
         <HashRouter>
             <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<OnboardingFlow />} />
                 <Route
                     path="/*"
                     element={
