@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { OnboardingStep, OnboardingData } from '../types';
-import { 
-    Mail, ShieldCheck, Lock, Building2, MapPin, Globe, Phone, 
-    CheckCircle2, ArrowRight, Loader2, ChevronRight, Image as ImageIcon 
+import { getOnboardingEmail, setOnboardingEmail, setOnboardingToken } from '../services/session';
+import {
+    Mail, ShieldCheck, Lock, Building2,
+    CheckCircle2, Loader2, ChevronRight
 } from 'lucide-react';
 
 export const OnboardingFlow: React.FC = () => {
@@ -23,21 +24,11 @@ export const OnboardingFlow: React.FC = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     
+    // Signup asks for the gym name only. Company email, TIN, phone, address and
+    // website are edited from the Business Profile screen after sign-in.
     const [companyInfo, setCompanyInfo] = useState({
-        companyName: '',
-        subDomain: '',
-        companyEmail: '',
-        tin: '',
-        phone: ''
+        companyName: ''
     });
-
-    const [advancedInfo, setAdvancedInfo] = useState({
-        logo: '',
-        address: '',
-        website: ''
-    });
-
-    const [phoneOtp, setPhoneOtp] = useState('');
 
     // Handle initial step from URL or state
     useEffect(() => {
@@ -46,7 +37,7 @@ export const OnboardingFlow: React.FC = () => {
             setStep(urlStep);
         }
         
-        const savedEmail = localStorage.getItem('onboarding_email');
+        const savedEmail = getOnboardingEmail();
         if (savedEmail) setEmail(savedEmail);
     }, [searchParams]);
 
@@ -69,7 +60,7 @@ export const OnboardingFlow: React.FC = () => {
         setError(null);
         try {
             await api.onboarding.requestEmailOtp(email);
-            localStorage.setItem('onboarding_email', email);
+            setOnboardingEmail(email);
             setSuccessMessage("OTP sent to your email");
             setTimeout(() => nextStep('OTP_CONFIRMATION'), 1500);
         } catch (err) { handleError(err); }
@@ -112,37 +103,17 @@ export const OnboardingFlow: React.FC = () => {
                 ...companyInfo
             });
             
+            // Onboarding token, not a super admin console token — keep it in its
+            // own key so the router does not mistake it for a signed-in session.
             if (res.token) {
-                localStorage.setItem('token', res.token);
+                setOnboardingToken(res.token);
             }
             
             setSuccessMessage("Company profile created!");
-            setTimeout(() => nextStep('COMPANY_DETAILS'), 1500);
-        } catch (err) { handleError(err); }
-        finally { setLoading(false); }
-    };
-
-    const handleAdvancedDetails = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError(null);
-        try {
-            await api.onboarding.updateCompanyDetails(advancedInfo);
-            nextStep('PHONE_VERIFICATION');
-            // Trigger phone OTP immediately
-            await api.onboarding.requestPhoneOtp();
-        } catch (err) { handleError(err); }
-        finally { setLoading(false); }
-    };
-
-    const handleConfirmPhoneOtp = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError(null);
-        try {
-            await api.onboarding.confirmPhoneOtp(phoneOtp);
             nextStep('COMPLETED');
-            setTimeout(() => navigate('/dashboard'), 3000);
+            // Onboarding never issues a super admin console token, so send them to
+            // sign in rather than to a dashboard that would bounce them straight back.
+            setTimeout(() => navigate('/login'), 3000);
         } catch (err) { handleError(err); }
         finally { setLoading(false); }
     };
@@ -151,8 +122,7 @@ export const OnboardingFlow: React.FC = () => {
 
     const ProgressHeader = () => {
         const steps: OnboardingStep[] = [
-            'EMAIL_VERIFICATION', 'PASSWORD_CREATION', 'COMPANY_STEP_1', 
-            'COMPANY_DETAILS', 'PHONE_VERIFICATION', 'COMPLETED'
+            'EMAIL_VERIFICATION', 'PASSWORD_CREATION', 'COMPANY_STEP_1', 'COMPLETED'
         ];
         const currentIndex = steps.indexOf(step === 'OTP_CONFIRMATION' ? 'EMAIL_VERIFICATION' : step);
         
@@ -306,157 +276,25 @@ export const OnboardingFlow: React.FC = () => {
                     icon={Building2}
                 >
                     <form onSubmit={handleCompanyStep1} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-bold text-gray-700 ml-1">Gym Name</label>
-                                <input 
-                                    type="text" required 
-                                    value={companyInfo.companyName}
-                                    onChange={e => setCompanyInfo({...companyInfo, companyName: e.target.value})}
-                                    className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium"
-                                    placeholder="Alpha Gym"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-bold text-gray-700 ml-1">Subdomain</label>
-                                <div className="relative">
-                                    <input 
-                                        type="text" required 
-                                        value={companyInfo.subDomain}
-                                        onChange={e => setCompanyInfo({...companyInfo, subDomain: e.target.value})}
-                                        className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium pr-16"
-                                        placeholder="alpha"
-                                    />
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">.gym</span>
-                                </div>
-                            </div>
-                        </div>
                         <div className="space-y-1.5">
-                            <label className="text-sm font-bold text-gray-700 ml-1">Business Email</label>
-                            <input 
-                                type="email" required 
-                                value={companyInfo.companyEmail}
-                                onChange={e => setCompanyInfo({...companyInfo, companyEmail: e.target.value})}
+                            <label className="text-sm font-bold text-gray-700 ml-1">Gym Name</label>
+                            <input
+                                type="text" required
+                                value={companyInfo.companyName}
+                                onChange={e => setCompanyInfo({...companyInfo, companyName: e.target.value})}
                                 className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium"
-                                placeholder="contact@alphagym.com"
+                                placeholder="Alpha Gym"
                             />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-bold text-gray-700 ml-1">TIN Number</label>
-                                <input 
-                                    type="text" required 
-                                    value={companyInfo.tin}
-                                    onChange={e => setCompanyInfo({...companyInfo, tin: e.target.value})}
-                                    className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium"
-                                    placeholder="999-123-456"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-bold text-gray-700 ml-1">Phone Number</label>
-                                <input 
-                                    type="text" required 
-                                    value={companyInfo.phone}
-                                    onChange={e => setCompanyInfo({...companyInfo, phone: e.target.value})}
-                                    className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium"
-                                    placeholder="255700000001"
-                                />
-                            </div>
-                        </div>
-                        <button 
+                        <p className="text-xs font-medium text-gray-400 ml-1 leading-relaxed">
+                            You can add your TIN, phone, address and other business details
+                            later from your Business Profile.
+                        </p>
+                        <button
                             disabled={loading}
                             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2 mt-4"
                         >
-                            {loading ? <Loader2 className="animate-spin" /> : "Save & Continue"}
-                        </button>
-                    </form>
-                </CardWrapper>
-            )}
-
-            {step === 'COMPANY_DETAILS' && (
-                <CardWrapper 
-                    title="Design & Links" 
-                    subtitle="Add a personal touch to your gym profile" 
-                    icon={Globe}
-                >
-                    <form onSubmit={handleAdvancedDetails} className="space-y-6">
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-bold text-gray-700 ml-1">Logo URL</label>
-                            <div className="flex gap-3">
-                                <div className="flex-1 relative">
-                                    <input 
-                                        type="url" 
-                                        value={advancedInfo.logo}
-                                        onChange={e => setAdvancedInfo({...advancedInfo, logo: e.target.value})}
-                                        className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium pl-10"
-                                        placeholder="https://cdn.com/logo.png"
-                                    />
-                                    <ImageIcon size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                </div>
-                                {advancedInfo.logo && (
-                                    <div className="w-12 h-12 rounded-xl border border-gray-100 bg-white p-1 overflow-hidden">
-                                        <img src={advancedInfo.logo} alt="Logo Preview" className="w-full h-full object-contain" />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-bold text-gray-700 ml-1">Physical Address</label>
-                            <div className="relative">
-                                <input 
-                                    type="text" required 
-                                    value={advancedInfo.address}
-                                    onChange={e => setAdvancedInfo({...advancedInfo, address: e.target.value})}
-                                    className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium pl-10"
-                                    placeholder="123 Gym Street, Dar es Salaam"
-                                />
-                                <MapPin size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-bold text-gray-700 ml-1">Website (Optional)</label>
-                            <div className="relative">
-                                <input 
-                                    type="url" 
-                                    value={advancedInfo.website}
-                                    onChange={e => setAdvancedInfo({...advancedInfo, website: e.target.value})}
-                                    className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-4 focus:ring-blue-100 transition-all font-medium pl-10"
-                                    placeholder="https://alphagym.com"
-                                />
-                                <Globe size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            </div>
-                        </div>
-                        <button 
-                            disabled={loading}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : "Almost Done"}
-                        </button>
-                    </form>
-                </CardWrapper>
-            )}
-
-            {step === 'PHONE_VERIFICATION' && (
-                <CardWrapper 
-                    title="Phone Verification" 
-                    subtitle={`Final step! Enter the code sent to ${companyInfo.phone || 'your phone'}`} 
-                    icon={Phone}
-                >
-                    <form onSubmit={handleConfirmPhoneOtp} className="space-y-6">
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-bold text-gray-700 ml-1">Verification Code</label>
-                            <input 
-                                type="text" required maxLength={6} value={phoneOtp} 
-                                onChange={e => setPhoneOtp(e.target.value)}
-                                className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-4 focus:ring-blue-100 transition-all font-mono text-2xl tracking-[1em] text-center text-gray-900"
-                                placeholder="000000"
-                            />
-                        </div>
-                        <button 
-                            disabled={loading}
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : "Complete Registration"}
+                            {loading ? <Loader2 className="animate-spin" /> : "Create Account"}
                         </button>
                     </form>
                 </CardWrapper>

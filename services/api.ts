@@ -10,15 +10,37 @@ import {
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit
 } from '../types';
+import { clearSession, getOnboardingToken, getToken } from './session';
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
-const getHeaders = () => {
-  const token = localStorage.getItem('token');
+const ONBOARDING_PREFIX = '/api/v1/onboarding';
+
+// Endpoints where a 401 is an answer, not an expired session. Signing these out
+// would wipe the onboarding token mid-flow, or bounce a user off the login page
+// for mistyping their password.
+const isSessionExempt = (endpoint: string) =>
+  endpoint.startsWith('/api/superadmin/auth/login') || endpoint.startsWith(ONBOARDING_PREFIX);
+
+const getHeaders = (endpoint: string) => {
+  const token = endpoint.startsWith(ONBOARDING_PREFIX)
+    ? getOnboardingToken() ?? getToken()
+    : getToken();
   return {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
+};
+
+// The backend answers an expired or revoked token with 401 and
+// errorCode TOKEN_EXPIRED. Without this the stale token stayed in localStorage,
+// the router kept letting the user in, and every page just rendered its own error.
+const handleUnauthorized = (endpoint: string) => {
+  if (isSessionExempt(endpoint)) return;
+  clearSession();
+  if (typeof window !== 'undefined' && !window.location.hash.startsWith('#/login')) {
+    window.location.hash = '/login';
+  }
 };
 
 const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> => {
@@ -26,15 +48,21 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
       headers: {
-        ...getHeaders(),
+        ...getHeaders(endpoint),
         ...options.headers,
       },
     });
 
-    // Parse JSON. If response is empty (e.g. 204), this might fail, 
+    // Parse JSON. If response is empty (e.g. 204), this might fail,
     // but the docs suggest wrapped responses for most endpoints.
     // For DELETE, if it returns 200 OK with body, it works.
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+
+    // Only 401. A 403 means the token authenticated but the authority check
+    // failed — signing out just loops the user back through login.
+    if (response.status === 401) {
+      handleUnauthorized(endpoint);
+    }
 
     if (!response.ok) {
       throw new Error(data.message || `Request failed with status ${response.status}`);
@@ -74,8 +102,9 @@ export const api = {
       }),
     logout: () =>
       request<null>('/api/superadmin/auth/logout', { method: 'POST' }),
+    // Backend returns the role as a bare string in `data`, not an object.
     validate: () =>
-      request<{ role: string }>('/api/superadmin/auth/validate', { method: 'GET' })
+      request<string>('/api/superadmin/auth/validate', { method: 'GET' })
   },
 
   superAdmin: {

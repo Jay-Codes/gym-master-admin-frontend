@@ -7,7 +7,7 @@ redirects = []
 [functions."*"]
 
 [build]
-publish = "/Users/jay/Documents/Dev Work/Growth/gym-master-admin-frontend/dist"
+publish = "/Users/jay/Documents/DevWork/Growth/gym-master-admin-frontend/dist"
 publishOrigin = "ui"
 commandOrigin = "ui"
 command = "npm run build"

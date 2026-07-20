@@ -1,10 +1,11 @@
-export type OnboardingStep = 
-  | 'EMAIL_VERIFICATION' 
+// COMPANY_DETAILS and PHONE_VERIFICATION were retired in V47: those fields moved
+// to the Business Profile screen and phones are verified on first SMS use.
+// OTP_CONFIRMATION is a client-only view, not a server-side step.
+export type OnboardingStep =
+  | 'EMAIL_VERIFICATION'
   | 'OTP_CONFIRMATION'
-  | 'PASSWORD_CREATION' 
-  | 'COMPANY_STEP_1' 
-  | 'COMPANY_DETAILS' 
-  | 'PHONE_VERIFICATION' 
+  | 'PASSWORD_CREATION'
+  | 'COMPANY_STEP_1'
   | 'COMPLETED';
 
 export interface AuthResponse {

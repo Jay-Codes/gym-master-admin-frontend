@@ -5,6 +5,9 @@ import { Modal } from './components/Modal';
 import { BillingModal } from './components/BillingModal';
 import { api } from './services/api';
 import {
+    ONBOARDING_STEP_KEY, clearSession, getRole, getToken, onSessionChange, setSession
+} from './services/session';
+import {
     User, SuperAdmin, Company, PageableResponse,
     CreateCompanyRequest, CreateSuperAdminRequest, CreateUserRequest,
     SmsBalanceData, BillingPlan, CreatePlanRequest, KazafitInvoice,
@@ -68,20 +71,22 @@ const Login: React.FC = () => {
         setError('');
         try {
             const data = await api.auth.login({ email, password });
-            if (data.data && data.data.token) {
-                localStorage.setItem('token', data.data.token);
-                localStorage.setItem('role', data.data.role);
-                
-                const onboardingStep = (data.data as any).onboarding_step as OnboardingStep;
-                if (onboardingStep) {
-                    localStorage.setItem('onboarding_step', onboardingStep);
-                }
-                
-                if (onboardingStep && onboardingStep !== 'COMPLETED') {
-                    navigate(`/register?step=${onboardingStep}`);
-                } else {
-                    navigate('/dashboard');
-                }
+            if (!data.data || !data.data.token) {
+                setError(data.message || 'Login failed: no session token returned');
+                return;
+            }
+
+            setSession(data.data.token, data.data.role);
+
+            const onboardingStep = (data.data as any).onboarding_step as OnboardingStep | undefined;
+            if (onboardingStep) {
+                localStorage.setItem(ONBOARDING_STEP_KEY, onboardingStep);
+            }
+
+            if (onboardingStep && onboardingStep !== 'COMPLETED') {
+                navigate(`/register?step=${onboardingStep}`);
+            } else {
+                navigate('/dashboard');
             }
         } catch (err: any) {
             setError(err.message || 'Login failed');
@@ -1138,9 +1143,7 @@ const CompaniesPage = () => {
                             >
                                 <option value="EMAIL_VERIFICATION">Email Verification</option>
                                 <option value="PASSWORD_CREATION">Password Creation</option>
-                                <option value="COMPANY_STEP_1">Company Step 1 (Basic Info)</option>
-                                <option value="COMPANY_DETAILS">Company Details (Logo/Address)</option>
-                                <option value="PHONE_VERIFICATION">Phone Verification</option>
+                                <option value="COMPANY_STEP_1">Company Step 1 (Gym Name)</option>
                                 <option value="COMPLETED">Completed (Full Access)</option>
                             </select>
                             <p className="text-xs text-amber-600 mt-2 font-medium bg-amber-50 p-3 rounded-lg flex items-start gap-2 border border-amber-100">
@@ -2808,11 +2811,51 @@ const PayoutsPage = () => {
 
 // --- App Root & Routing ---
 
+// A token in localStorage only means one was stored once. It says nothing about
+// whether the backend still honours it — it may have expired, been revoked by
+// logout, or been deleted by a login from another device (the backend keeps one
+// live token per super admin). So verify with the server before rendering.
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    const [status, setStatus] = useState<'checking' | 'valid' | 'invalid'>(
+        () => (getToken() ? 'checking' : 'invalid')
+    );
+
+    useEffect(() => {
+        if (!getToken()) {
+            setStatus('invalid');
+            return;
+        }
+
+        let cancelled = false;
+        api.auth.validate()
+            .then(() => { if (!cancelled) setStatus('valid'); })
+            .catch(() => {
+                if (cancelled) return;
+                clearSession();
+                setStatus('invalid');
+            });
+
+        return () => { cancelled = true; };
+    }, []);
+
+    // Covers the 401 interceptor clearing the session mid-session, and a sign-out
+    // in another tab.
+    useEffect(() => onSessionChange(() => {
+        if (!getToken()) setStatus('invalid');
+    }), []);
+
+    if (status === 'checking') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+                <Loader2 className="animate-spin text-blue-600" size={32} />
+            </div>
+        );
+    }
+
+    if (status === 'invalid') {
         return <Navigate to="/login" replace />;
     }
+
     return <>{children}</>;
 };
 
@@ -2820,12 +2863,21 @@ const DashboardLayout = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const activeTab = location.pathname.split('/')[1] || 'dashboard';
+    const [userRole, setUserRole] = useState(() => getRole() || 'SUPER_ADMIN');
 
-    const handleLogout = () => {
-        api.auth.logout();
-        localStorage.removeItem('token');
-        localStorage.removeItem('role');
-        navigate('/login');
+    useEffect(() => onSessionChange(() => setUserRole(getRole() || 'SUPER_ADMIN')), []);
+
+    const handleLogout = async () => {
+        try {
+            // Revoke server-side first — the token has to still be in storage for
+            // the request to carry it.
+            await api.auth.logout();
+        } catch (err) {
+            console.error('Logout request failed; clearing local session anyway:', err);
+        } finally {
+            clearSession();
+            navigate('/login');
+        }
     };
 
     return (
@@ -2833,7 +2885,7 @@ const DashboardLayout = () => {
             activeTab={activeTab}
             onNavigate={(tab) => navigate(`/${tab}`)}
             onLogout={handleLogout}
-            userRole={localStorage.getItem('role') || 'SUPER_ADMIN'}
+            userRole={userRole}
         >
             <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
