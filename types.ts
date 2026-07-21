@@ -383,3 +383,50 @@ export interface UpdatePayoutStatusRequest {
   status: PayoutStatus;
   reference?: string;
 }
+
+export interface BackfillPreviewMonth {
+  month: string;           // "yyyy-MM"
+  eligibleCount: number;
+  eligibleAmount: number;
+  alreadyInvoicedCount: number;
+  blockedCount: number;
+  blockedMemberIds: number[];
+}
+
+export interface BackfillPreview {
+  companyId: number;
+  from: string;
+  to: string;
+  months: BackfillPreviewMonth[];
+  totalEligibleCount: number;
+  totalEligibleAmount: number;
+  totalAlreadyInvoicedCount: number;
+  totalBlockedCount: number;
+  blockedMemberIds: number[];
+  coverageRatio: number;   // alreadyInvoiced / (alreadyInvoiced + eligible + blocked), 0 when empty
+}
+
+export interface BackfillRun {
+  runId: number;
+  companyId: number;
+  performedBy: string;
+  windowFrom: string;
+  windowTo: string;
+  rowsInserted: number;
+  amountInserted: number;
+  firstInvoiceId: number | null;
+  lastInvoiceId: number | null;
+  status: string;          // 'COMPLETED' | 'ROLLED_BACK'
+  hasMore: boolean;        // eligible population exceeded the 10,000-row per-run cap
+  createdAt: string;
+  rolledBackAt: string | null;
+  rolledBackBy: string | null;
+}
+
+export interface RunBackfillRequest {
+  companyId: number;
+  from: string;
+  to: string;
+  confirm: boolean;
+  force: boolean;
+}
