@@ -13,7 +13,8 @@ import {
     SmsBalanceData, BillingPlan, CreatePlanRequest, KazafitInvoice,
     PartnerAnalytics, Partner, CommissionOverrideRequest,
     PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod, OnboardingStep,
-    PartnerPayout, PayoutStatus, CreatePayoutRequest, UpdatePayoutStatusRequest
+    PartnerPayout, PayoutStatus, CreatePayoutRequest, UpdatePayoutStatusRequest,
+    BackfillPreview, BackfillPreviewMonth, BackfillRun
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import {
@@ -22,7 +23,7 @@ import {
     Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
     Eye, Copy, Check, Filter, MessageSquare, CreditCard, Download, FileText,
     Handshake, DollarSign, TrendingUp, Calendar, Settings, History, Clock,
-    ArrowRight, ArrowUpRight
+    ArrowRight, ArrowUpRight, Wrench, RotateCcw, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 // --- Helper Components ---
@@ -2809,6 +2810,451 @@ const PayoutsPage = () => {
     );
 };
 
+// --- Invoice Backfill Maintenance ---
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const MaintenancePage = () => {
+    const [companies, setCompanies] = useState<Company[]>([]);
+    const [companyId, setCompanyId] = useState<number | ''>('');
+    const [fromDate, setFromDate] = useState('2026-04-22');
+    const [toDate, setToDate] = useState(todayIso());
+
+    const [preview, setPreview] = useState<BackfillPreview | null>(null);
+    const [previewedParams, setPreviewedParams] = useState<{ companyId: number; from: string; to: string } | null>(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
+    const [previewError, setPreviewError] = useState('');
+    const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+    const [totalBlockedExpanded, setTotalBlockedExpanded] = useState(false);
+
+    const [runs, setRuns] = useState<BackfillRun[]>([]);
+    const [loadingRuns, setLoadingRuns] = useState(false);
+
+    const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+    const [confirmText, setConfirmText] = useState('');
+    const [force, setForce] = useState(false);
+    const [isRunning, setIsRunning] = useState(false);
+    const [runError, setRunError] = useState('');
+    const [lastRunResult, setLastRunResult] = useState<BackfillRun | null>(null);
+
+    const [rollbackTarget, setRollbackTarget] = useState<BackfillRun | null>(null);
+    const [isRollingBack, setIsRollingBack] = useState(false);
+
+    const selectedCompany = companies.find(c => c.id === companyId) || null;
+
+    const isPreviewStale = !previewedParams
+        || previewedParams.companyId !== companyId
+        || previewedParams.from !== fromDate
+        || previewedParams.to !== toDate;
+
+    const fetchCompanies = useCallback(async () => {
+        try {
+            const res = await api.companies.list(0, 1000);
+            if (res.data && 'content' in res.data) {
+                setCompanies((res.data as unknown as PageableResponse<Company>).content);
+            } else {
+                setCompanies(Array.isArray(res.data) ? res.data : []);
+            }
+        } catch (error) { console.error(error); }
+    }, []);
+
+    const fetchRuns = useCallback(async () => {
+        setLoadingRuns(true);
+        try {
+            const res = await api.backfill.runs(companyId ? (companyId as number) : undefined);
+            if (res.success) setRuns(Array.isArray(res.data) ? res.data : []);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoadingRuns(false);
+        }
+    }, [companyId]);
+
+    useEffect(() => { fetchCompanies(); }, [fetchCompanies]);
+    useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+    const toggleMonthExpanded = (month: string) => {
+        setExpandedMonths(prev => {
+            const next = new Set(prev);
+            if (next.has(month)) next.delete(month); else next.add(month);
+            return next;
+        });
+    };
+
+    const handlePreview = async () => {
+        if (!companyId) return;
+        setLoadingPreview(true);
+        setPreviewError('');
+        setLastRunResult(null);
+        try {
+            const res = await api.backfill.preview(companyId as number, fromDate, toDate);
+            if (res.success && res.data) {
+                setPreview(res.data);
+                setPreviewedParams({ companyId: companyId as number, from: fromDate, to: toDate });
+                setExpandedMonths(new Set());
+                setTotalBlockedExpanded(false);
+            } else {
+                setPreviewError(res.message || 'Failed to load preview');
+            }
+        } catch (error: any) {
+            setPreviewError(error.message || 'Failed to load preview');
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
+    const openConfirmModal = () => {
+        if (!preview || isPreviewStale || !selectedCompany) return;
+        setConfirmText('');
+        setForce(false);
+        setRunError('');
+        setConfirmModalOpen(true);
+    };
+
+    const handleConfirmRun = async () => {
+        if (!selectedCompany || confirmText !== selectedCompany.companyName) return;
+        setIsRunning(true);
+        setRunError('');
+        try {
+            const res = await api.backfill.run({
+                companyId: selectedCompany.id,
+                from: fromDate,
+                to: toDate,
+                confirm: true,
+                force
+            });
+            if (res.success && res.data) {
+                setLastRunResult(res.data);
+                setConfirmModalOpen(false);
+                // The population just changed server-side; force a fresh preview before another run.
+                setPreview(null);
+                setPreviewedParams(null);
+                fetchRuns();
+            } else {
+                setRunError(res.message || 'Backfill run was refused by the server');
+            }
+        } catch (error: any) {
+            setRunError(error.message || 'Backfill run was refused by the server');
+        } finally {
+            setIsRunning(false);
+        }
+    };
+
+    const handleRollbackConfirm = async () => {
+        if (!rollbackTarget) return;
+        setIsRollingBack(true);
+        try {
+            await api.backfill.rollback(rollbackTarget.runId);
+            setRollbackTarget(null);
+            fetchRuns();
+        } catch (error: any) {
+            alert(error.message || 'Rollback failed');
+        } finally {
+            setIsRollingBack(false);
+        }
+    };
+
+    const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all";
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <Wrench size={22} className="text-gray-500" /> Invoice Backfill
+                </h1>
+                <p className="text-gray-500 text-sm mt-1">
+                    Preview, run, and roll back historical invoice backfills for a company's ledger. Every run must be
+                    previewed with the current parameters and confirmed by typing the company name.
+                </p>
+            </div>
+
+            {/* Parameters */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                        <select
+                            className={inputClasses}
+                            value={companyId}
+                            onChange={e => setCompanyId(e.target.value ? parseInt(e.target.value) : '')}
+                        >
+                            <option value="">Select a company...</option>
+                            {companies.map(c => (
+                                <option key={c.id} value={c.id}>{c.companyName}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                        <input type="date" className={inputClasses} value={fromDate} onChange={e => setFromDate(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                        <input type="date" className={inputClasses} value={toDate} onChange={e => setToDate(e.target.value)} />
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                    <button
+                        onClick={handlePreview}
+                        disabled={!companyId || loadingPreview}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
+                    >
+                        {loadingPreview ? <Loader2 className="animate-spin" size={16} /> : <Eye size={16} />}
+                        Preview
+                    </button>
+
+                    <button
+                        onClick={openConfirmModal}
+                        disabled={!preview || isPreviewStale}
+                        title={isPreviewStale ? "Preview is stale for the current parameters — preview again before running" : undefined}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
+                    >
+                        <AlertTriangle size={16} /> Run Backfill
+                    </button>
+
+                    {preview && isPreviewStale && (
+                        <span className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                            <AlertTriangle size={12} /> Parameters changed since preview — preview again to run.
+                        </span>
+                    )}
+                </div>
+
+                {previewError && (
+                    <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                        <XCircle size={16} /> {previewError}
+                    </div>
+                )}
+
+                {lastRunResult && (
+                    <div className="p-4 bg-green-50 text-green-800 text-sm rounded-lg border border-green-100 space-y-1">
+                        <div className="font-bold flex items-center gap-2"><CheckCircle2 size={16} /> Run #{lastRunResult.runId} completed</div>
+                        <div>Inserted {lastRunResult.rowsInserted.toLocaleString()} invoice rows totalling {lastRunResult.amountInserted.toLocaleString()}.</div>
+                        {lastRunResult.hasMore && (
+                            <div className="font-bold text-amber-700 flex items-center gap-1.5 mt-1">
+                                <AlertTriangle size={14} /> The eligible population exceeded the per-run cap (10,000 rows). Preview and run again to cover the remainder.
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Preview Results */}
+            {preview && (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Eligible</div>
+                            <div className="text-xl font-black text-gray-900 mt-1">{preview.totalEligibleCount.toLocaleString()}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Eligible Amount</div>
+                            <div className="text-xl font-black text-gray-900 mt-1">{preview.totalEligibleAmount.toLocaleString()}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Already Invoiced</div>
+                            <div className="text-xl font-black text-gray-900 mt-1">{preview.totalAlreadyInvoicedCount.toLocaleString()}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Blocked</div>
+                            <div className="text-xl font-black text-red-600 mt-1">{preview.totalBlockedCount.toLocaleString()}</div>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Coverage Ratio</div>
+                            <div className="text-xl font-black text-gray-900 mt-1">{(preview.coverageRatio * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
+
+                    {preview.totalBlockedCount > 0 && (
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                            <button
+                                onClick={() => setTotalBlockedExpanded(v => !v)}
+                                className="text-sm font-semibold text-red-600 flex items-center gap-1.5 hover:underline"
+                            >
+                                {totalBlockedExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                {totalBlockedExpanded ? 'Hide' : 'View'} all {preview.blockedMemberIds.length} blocked member ID(s) — these records need to be fixed before they can be backfilled
+                            </button>
+                            {totalBlockedExpanded && (
+                                <div className="mt-3 max-h-40 overflow-y-auto bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-700 font-mono break-all">
+                                    {preview.blockedMemberIds.join(', ') || 'None'}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <DataTable<BackfillPreviewMonth>
+                        data={preview.months}
+                        columns={[
+                            { header: 'Month', accessor: (m) => <div className="font-bold text-gray-900">{m.month}</div> },
+                            { header: 'Eligible Count', accessor: (m) => m.eligibleCount.toLocaleString() },
+                            { header: 'Eligible Amount', accessor: (m) => m.eligibleAmount.toLocaleString() },
+                            { header: 'Already Invoiced', accessor: (m) => m.alreadyInvoicedCount.toLocaleString() },
+                            {
+                                header: 'Blocked',
+                                accessor: (m) => (
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`font-bold ${m.blockedCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>{m.blockedCount}</span>
+                                            {m.blockedCount > 0 && (
+                                                <button
+                                                    onClick={() => toggleMonthExpanded(m.month)}
+                                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                                >
+                                                    {expandedMonths.has(m.month) ? 'Hide' : 'View IDs'}
+                                                    {expandedMonths.has(m.month) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                                </button>
+                                            )}
+                                        </div>
+                                        {expandedMonths.has(m.month) && m.blockedCount > 0 && (
+                                            <div className="mt-2 max-w-[220px] max-h-24 overflow-y-auto bg-red-50 border border-red-100 rounded-lg p-2 text-xs text-red-700 font-mono break-all">
+                                                {m.blockedMemberIds.join(', ')}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            }
+                        ]}
+                    />
+                </div>
+            )}
+
+            {/* Run History */}
+            <div>
+                <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg font-bold text-gray-900">Run History {selectedCompany ? `— ${selectedCompany.companyName}` : '(All Companies)'}</h2>
+                    <button
+                        onClick={() => fetchRuns()}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-gray-200 bg-white"
+                        title="Refresh"
+                    >
+                        <RefreshCw size={16} className={loadingRuns ? "animate-spin" : ""} />
+                    </button>
+                </div>
+
+                <DataTable<BackfillRun>
+                    data={runs}
+                    columns={[
+                        { header: 'Run', accessor: (r) => <span className="font-mono text-xs">#{r.runId}</span> },
+                        {
+                            header: 'Window', accessor: (r) => (
+                                <div className="text-xs">
+                                    <div>{r.windowFrom} → {r.windowTo}</div>
+                                </div>
+                            )
+                        },
+                        { header: 'Rows Inserted', accessor: (r) => r.rowsInserted.toLocaleString() },
+                        { header: 'Amount', accessor: (r) => r.amountInserted.toLocaleString() },
+                        { header: 'Performed By', accessor: (r) => r.performedBy },
+                        {
+                            header: 'Status', accessor: (r) => (
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${r.status === 'ROLLED_BACK' ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-800'}`}>
+                                    {r.status}
+                                </span>
+                            )
+                        },
+                        {
+                            header: 'Has More', accessor: (r) => r.hasMore
+                                ? <span className="text-amber-600 font-semibold text-xs flex items-center gap-1"><AlertTriangle size={12} /> Yes</span>
+                                : <span className="text-gray-400 text-xs">No</span>
+                        },
+                        { header: 'Created', accessor: (r) => <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleString()}</span> }
+                    ]}
+                    actions={(r: BackfillRun) => (
+                        <button
+                            onClick={() => setRollbackTarget(r)}
+                            disabled={r.status === 'ROLLED_BACK'}
+                            className="text-red-600 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent flex items-center gap-1.5 text-xs font-bold"
+                            title={r.status === 'ROLLED_BACK' ? 'Already rolled back' : 'Roll back this run'}
+                        >
+                            <RotateCcw size={14} /> Rollback
+                        </button>
+                    )}
+                />
+            </div>
+
+            {/* Run Confirmation Modal */}
+            <Modal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} title="Confirm Invoice Backfill">
+                {selectedCompany && preview && (
+                    <div className="space-y-5">
+                        <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-start gap-3">
+                            <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={18} />
+                            <div>
+                                <h4 className="font-bold text-red-900 text-sm">This writes invoice rows into a live customer ledger</h4>
+                                <p className="text-xs text-red-700 mt-1">
+                                    Company: <strong>{selectedCompany.companyName}</strong> &middot; Window: {fromDate} → {toDate}
+                                </p>
+                                <p className="text-xs text-red-700 mt-1">
+                                    Eligible: {preview.totalEligibleCount.toLocaleString()} rows / {preview.totalEligibleAmount.toLocaleString()}. Blocked: {preview.totalBlockedCount.toLocaleString()}.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                Type the company name <span className="font-mono bg-gray-100 px-1 rounded">{selectedCompany.companyName}</span> to confirm
+                            </label>
+                            <input
+                                type="text"
+                                className={inputClasses}
+                                value={confirmText}
+                                onChange={e => setConfirmText(e.target.value)}
+                                placeholder={selectedCompany.companyName}
+                                autoComplete="off"
+                            />
+                        </div>
+
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" checked={force} onChange={e => setForce(e.target.checked)} />
+                            Force — override an overlapping non-rolled-back run for this company
+                        </label>
+
+                        {runError && (
+                            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                                <XCircle size={16} /> {runError}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                            <button type="button" onClick={() => setConfirmModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 bg-white">Cancel</button>
+                            <button
+                                onClick={handleConfirmRun}
+                                disabled={confirmText !== selectedCompany.companyName || isRunning}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2 shadow-sm"
+                            >
+                                {isRunning ? <Loader2 className="animate-spin" size={16} /> : <AlertTriangle size={16} />}
+                                Run Backfill
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* Rollback Confirmation Modal */}
+            <Modal isOpen={!!rollbackTarget} onClose={() => setRollbackTarget(null)} title="Confirm Rollback">
+                {rollbackTarget && (
+                    <div className="space-y-5">
+                        <p className="text-gray-600 text-sm">
+                            Roll back run <strong>#{rollbackTarget.runId}</strong>? This will remove the {rollbackTarget.rowsInserted.toLocaleString()} invoice
+                            rows ({rollbackTarget.amountInserted.toLocaleString()}) inserted by this run.
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setRollbackTarget(null)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700">Cancel</button>
+                            <button
+                                onClick={handleRollbackConfirm}
+                                disabled={isRollingBack}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 shadow-sm flex items-center gap-2"
+                            >
+                                {isRollingBack ? <Loader2 className="animate-spin" size={16} /> : <RotateCcw size={16} />}
+                                Roll Back
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+        </div>
+    );
+};
+
 // --- App Root & Routing ---
 
 // A token in localStorage only means one was stored once. It says nothing about
@@ -2897,6 +3343,7 @@ const DashboardLayout = () => {
                 <Route path="/invoices" element={<InvoicesPage />} />
                 <Route path="/partners" element={<PartnersPage />} />
                 <Route path="/payouts" element={<PayoutsPage />} />
+                <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
         </Layout>
     );
