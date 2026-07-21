@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, LayoutDashboard, Users, Building2, ShieldCheck, Menu, CreditCard, FileText, Handshake, DollarSign } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, Building2, ShieldCheck, Menu, CreditCard, FileText, Handshake, DollarSign, Wrench } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -21,6 +21,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onNavigate,
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'partners', label: 'Partners', icon: Handshake },
     { id: 'payouts', label: 'Payouts', icon: DollarSign },
+    { id: 'maintenance', label: 'Maintenance', icon: Wrench },
   ];
 
   return (

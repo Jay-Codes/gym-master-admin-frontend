@@ -8,7 +8,8 @@ import {
   PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod,
   OnboardingStep, OnboardingData, OnboardingResponse,
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
-  UpdatePlanRequest, PlanAudit
+  UpdatePlanRequest, PlanAudit,
+  BackfillPreview, BackfillRun, RunBackfillRequest
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -394,6 +395,26 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ onboarding_step: onboardingStep })
       }),
+  },
+
+  backfill: {
+    preview: (companyId: number, from: string, to: string) =>
+      request<BackfillPreview>(`/api/superadmin/maintenance/invoice-backfill/preview?companyId=${companyId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+        method: 'GET'
+      }),
+    run: (data: RunBackfillRequest) =>
+      request<BackfillRun>('/api/superadmin/maintenance/invoice-backfill', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    runs: (companyId?: number) =>
+      request<BackfillRun[]>(`/api/superadmin/maintenance/invoice-backfill/runs${companyId ? `?companyId=${companyId}` : ''}`, {
+        method: 'GET'
+      }),
+    rollback: (runId: number) =>
+      request<BackfillRun>(`/api/superadmin/maintenance/invoice-backfill/runs/${runId}/rollback`, {
+        method: 'POST'
+      })
   },
 
   billing: {
