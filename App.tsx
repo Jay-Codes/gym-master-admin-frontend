@@ -4,7 +4,7 @@ import { Layout } from './components/Layout';
 import { Modal } from './components/Modal';
 import { BillingModal } from './components/BillingModal';
 import { api } from './services/api';
-import {
+import { 
     ONBOARDING_STEP_KEY, clearSession, getRole, getToken, onSessionChange, setSession
 } from './services/session';
 import {
