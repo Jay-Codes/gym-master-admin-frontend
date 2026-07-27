@@ -14,7 +14,8 @@ import {
     PartnerAnalytics, Partner, CommissionOverrideRequest,
     PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod, OnboardingStep,
     PartnerPayout, PayoutStatus, CreatePayoutRequest, UpdatePayoutStatusRequest,
-    BackfillPreview, BackfillPreviewMonth, BackfillRun
+    BackfillPreview, BackfillPreviewMonth, BackfillRun,
+    PortalOtpSettings, PortalOtpSpend, PortalOtpSpendDay, PortalOtpSpendGym
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import {
@@ -3276,6 +3277,681 @@ const MaintenancePage = () => {
     );
 };
 
+// --- Gymless portal login: platform-funded SMS spend ---
+//
+// Growsoft pays for the OTP SMS sent on the gymless login path — a member who
+// opens the portal without their gym's QR link. Gyms pay for everything else.
+// Every figure on this screen is therefore platform cost, not gym revenue and
+// not anything a gym is invoiced for.
+//
+// Figures are derived from our own ledger and are not reconciled against the
+// provider invoice (see the spec's open question 4). Do not present them as a
+// billable reconciliation.
+
+interface SettingsFormState {
+    smsUnitCostTzs: string;
+    perPhoneDaily: string;
+    perIpDaily: string;
+    perIpHourly: string;
+    ipCapsEnforced: boolean;
+    gymlessLoginEnabled: boolean;
+}
+
+const toSettingsForm = (s: PortalOtpSettings): SettingsFormState => ({
+    smsUnitCostTzs: String(s.smsUnitCostTzs ?? ''),
+    perPhoneDaily: String(s.perPhoneDaily ?? ''),
+    perIpDaily: String(s.perIpDaily ?? ''),
+    perIpHourly: String(s.perIpHourly ?? ''),
+    ipCapsEnforced: !!s.ipCapsEnforced,
+    gymlessLoginEnabled: !!s.gymlessLoginEnabled,
+});
+
+type NumericSettingKey = 'smsUnitCostTzs' | 'perPhoneDaily' | 'perIpDaily' | 'perIpHourly';
+
+// Each threshold carries its unit and what turning it up actually does, so an
+// admin moving perIpHourly from 10 to 1000 can see they are switching it off.
+const NUMERIC_SETTINGS: {
+    key: NumericSettingKey; label: string; unit: string; step: string; hint: string;
+}[] = [
+    {
+        key: 'smsUnitCostTzs',
+        label: 'SMS unit cost',
+        unit: 'TZS per credit',
+        step: '0.01',
+        hint: 'What one SMS credit costs Growsoft. Stamped onto each ledger row at the moment of send, so a change re-prices future sends only — past periods keep the rate they were actually charged at.',
+    },
+    {
+        key: 'perPhoneDaily',
+        label: 'Per phone, per day',
+        unit: 'sends / phone / day',
+        step: '1',
+        hint: 'Most OTPs one phone number can trigger in a day, counted across the gymless and gym-QR paths together. A real member needs one or two. This is the cap that stays enforced regardless of the IP setting below.',
+    },
+    {
+        key: 'perIpDaily',
+        label: 'Per IP, per day',
+        unit: 'sends / IP / day',
+        step: '1',
+        hint: 'Daily ceiling per client IP. Tanzanian mobile data is heavily CGNAT’d — thousands of subscribers share one public address — so this is deliberately generous. It is an anti-scripting speed bump, not a bound on total exposure.',
+    },
+    {
+        key: 'perIpHourly',
+        label: 'Per IP, per hour',
+        unit: 'sends / IP / hour',
+        step: '1',
+        hint: 'The cap that actually catches scripting: a daily ceiling alone lets an attacker spend a whole day’s allowance in one minute. Setting this at or above the daily figure switches hourly limiting off in practice.',
+    },
+];
+
+const SmsSpendPage = () => {
+    // Period / date range — shared helpers, same semantics as Partners and Payouts.
+    const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>('month');
+    const [customRange, setCustomRange] = useState<CustomRange>({ start: '', end: '' });
+
+    // Spend. `spend === null` with no error is "not loaded", which is a different
+    // thing from a loaded period that happens to contain nothing.
+    const [spend, setSpend] = useState<PortalOtpSpend | null>(null);
+    const [spendLoading, setSpendLoading] = useState(false);
+    const [spendError, setSpendError] = useState('');
+
+    // Settings, loaded and saved independently of spend: the backend may serve one
+    // and not the other, and a failure on either must not blank the other.
+    const [settings, setSettings] = useState<PortalOtpSettings | null>(null);
+    const [form, setForm] = useState<SettingsFormState | null>(null);
+    const [settingsLoading, setSettingsLoading] = useState(false);
+    const [settingsError, setSettingsError] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const [saveNotice, setSaveNotice] = useState('');
+
+    // Kill switch confirmation. Holds the value being moved to, so the dialog can
+    // state the consequence of that specific direction.
+    const [killSwitchTarget, setKillSwitchTarget] = useState<boolean | null>(null);
+    const [killSwitchBusy, setKillSwitchBusy] = useState(false);
+    const [killSwitchError, setKillSwitchError] = useState('');
+
+    const range = resolvePeriodDays(selectedPeriod, customRange);
+    const rangeIncomplete = !range.from || !range.to;
+
+    const fetchSpend = useCallback(async () => {
+        const { from, to } = resolvePeriodDays(selectedPeriod, customRange);
+        if (!from || !to) {
+            setSpend(null);
+            setSpendError('');
+            return;
+        }
+        setSpendLoading(true);
+        setSpendError('');
+        try {
+            const res = await api.superAdmin.portalOtp.getSpend(from, to);
+            if (res && res.success && res.data) {
+                setSpend(res.data);
+            } else {
+                // Drop what we had rather than leave a stale period on screen
+                // under the new date label.
+                setSpend(null);
+                setSpendError(res?.message || 'The server did not return spend data for this range.');
+            }
+        } catch (error: any) {
+            setSpend(null);
+            setSpendError(error?.message || 'Could not reach the spend endpoint.');
+        } finally {
+            setSpendLoading(false);
+        }
+    }, [selectedPeriod, customRange]);
+
+    const fetchSettings = useCallback(async () => {
+        setSettingsLoading(true);
+        setSettingsError('');
+        try {
+            const res = await api.superAdmin.portalOtp.getSettings();
+            if (res && res.success && res.data) {
+                setSettings(res.data);
+                setForm(toSettingsForm(res.data));
+            } else {
+                // No defaults are invented here: showing 20/5/40/10 when the read
+                // failed would look exactly like the real configuration.
+                setSettings(null);
+                setForm(null);
+                setSettingsError(res?.message || 'The server did not return the OTP settings.');
+            }
+        } catch (error: any) {
+            setSettings(null);
+            setForm(null);
+            setSettingsError(error?.message || 'Could not reach the OTP settings endpoint.');
+        } finally {
+            setSettingsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchSpend(); }, [fetchSpend]);
+    useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+    const parsedForm = (): PortalOtpSettings | string => {
+        if (!form) return 'Settings are not loaded.';
+        const out: any = {
+            ipCapsEnforced: form.ipCapsEnforced,
+            gymlessLoginEnabled: form.gymlessLoginEnabled,
+        };
+        for (const field of NUMERIC_SETTINGS) {
+            const raw = form[field.key].trim();
+            if (raw === '') return `${field.label} cannot be blank.`;
+            const value = Number(raw);
+            if (!Number.isFinite(value) || value < 0) return `${field.label} must be a number of ${field.unit}, zero or above.`;
+            out[field.key] = value;
+        }
+        return out as PortalOtpSettings;
+    };
+
+    const isDirty = !!form && !!settings && (
+        NUMERIC_SETTINGS.some(f => form[f.key].trim() !== String(settings[f.key] ?? ''))
+        || form.ipCapsEnforced !== !!settings.ipCapsEnforced
+    );
+
+    const handleSaveSettings = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const parsed = parsedForm();
+        if (typeof parsed === 'string') {
+            setSaveError(parsed);
+            setSaveNotice('');
+            return;
+        }
+        setSaving(true);
+        setSaveError('');
+        setSaveNotice('');
+        try {
+            // The kill switch is never carried by this form. It has its own
+            // confirmed write, and an unsaved toggle must not ride along here.
+            const payload: PortalOtpSettings = {
+                ...parsed,
+                gymlessLoginEnabled: settings ? settings.gymlessLoginEnabled : parsed.gymlessLoginEnabled,
+            };
+            const res = await api.superAdmin.portalOtp.updateSettings(payload);
+            if (res && res.success && res.data) {
+                setSettings(res.data);
+                setForm(toSettingsForm(res.data));
+            } else {
+                setSettings(payload);
+                setForm(toSettingsForm(payload));
+            }
+            setSaveNotice('Thresholds saved.');
+        } catch (error: any) {
+            setSaveError(error?.message || 'Failed to save the OTP settings.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleKillSwitchConfirm = async () => {
+        if (killSwitchTarget === null || !settings) return;
+        setKillSwitchBusy(true);
+        setKillSwitchError('');
+        try {
+            const payload: PortalOtpSettings = { ...settings, gymlessLoginEnabled: killSwitchTarget };
+            const res = await api.superAdmin.portalOtp.updateSettings(payload);
+            const saved = (res && res.success && res.data) ? res.data : payload;
+            setSettings(saved);
+            setForm(prev => prev ? { ...prev, gymlessLoginEnabled: saved.gymlessLoginEnabled } : toSettingsForm(saved));
+            setKillSwitchTarget(null);
+        } catch (error: any) {
+            setKillSwitchError(error?.message || 'Failed to change the gymless login setting.');
+        } finally {
+            setKillSwitchBusy(false);
+        }
+    };
+
+    // Derived from the two raw counts rather than the server's conversionRate,
+    // which does not say whether it is a fraction or a percentage.
+    const conversionPct = spend && spend.totalSends > 0
+        ? (spend.totalVerified / spend.totalSends) * 100
+        : null;
+    const conversionIsLow = conversionPct !== null && spend !== null
+        && spend.totalSends >= 20 && conversionPct < 60;
+
+    const inputClasses = "w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none";
+
+    return (
+        <div className="space-y-8">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Gymless Login SMS Spend</h1>
+                    <p className="text-gray-500 text-sm mt-1">
+                        OTP messages Growsoft pays for when a member signs in without their gym&rsquo;s QR link
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    <PeriodTabs selected={selectedPeriod} onSelect={setSelectedPeriod} />
+                    <button
+                        onClick={() => { fetchSpend(); fetchSettings(); }}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all border border-gray-200 bg-white"
+                        title="Refresh"
+                    >
+                        <RefreshCw size={20} className={(spendLoading || settingsLoading) ? "animate-spin" : ""} />
+                    </button>
+                </div>
+            </div>
+
+            {selectedPeriod === 'custom' && (
+                <CustomRangeBar range={customRange} onChange={setCustomRange} onApply={() => fetchSpend()} />
+            )}
+
+            {/* --- Spend --- */}
+            <section className="space-y-6">
+                {rangeIncomplete ? (
+                    <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <Calendar className="mx-auto text-gray-300" size={32} />
+                        <p className="text-gray-500 text-sm mt-3">Pick a start and end date, then apply the range.</p>
+                    </div>
+                ) : spendLoading ? (
+                    <div className="bg-white p-12 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center">
+                        <Loader2 className="animate-spin text-blue-600" size={28} />
+                    </div>
+                ) : spendError ? (
+                    // Deliberately shows no figures at all. "We could not load spend"
+                    // and "0 TZS was spent" are different claims.
+                    <div className="bg-white p-6 rounded-2xl border border-red-100 shadow-sm">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                            <div className="flex-1">
+                                <h3 className="font-bold text-red-900 text-sm">Spend could not be loaded</h3>
+                                <p className="text-xs text-red-700 mt-1">{spendError}</p>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    No figures are shown for {range.from} → {range.to}. This is not a zero — the
+                                    amount spent in this period is unknown until the request succeeds.
+                                </p>
+                                <button
+                                    onClick={() => fetchSpend()}
+                                    className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-all"
+                                >
+                                    Try again
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : !spend ? (
+                    <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <p className="text-gray-500 text-sm">Spend has not been loaded yet.</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Conversion is the headline: a low ratio is either a UX
+                            problem or an attack, and nothing else here shows either. */}
+                        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6`}>
+                            <div className={`lg:col-span-1 p-6 rounded-2xl shadow-sm border ${
+                                conversionIsLow ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'
+                            }`}>
+                                <h3 className="text-xs font-bold uppercase tracking-wider mb-1 text-gray-500">
+                                    Verify conversion
+                                </h3>
+                                <p className={`text-5xl font-black ${conversionIsLow ? 'text-amber-700' : 'text-blue-600'}`}>
+                                    {conversionPct === null ? '—' : `${conversionPct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`}
+                                </p>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    {formatCount(spend.totalVerified)} verified of {formatCount(spend.totalSends)} sent
+                                </p>
+                                {conversionIsLow ? (
+                                    <p className="text-xs text-amber-800 mt-3 flex items-start gap-1.5">
+                                        <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                        <span>
+                                            Low. Codes are being paid for and not used — either the login screen is
+                                            failing people, or someone is triggering sends they never intend to complete.
+                                        </span>
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-gray-400 mt-3">
+                                        Sends that led to a completed verify. A falling ratio is the first sign of a
+                                        UX problem or an attack.
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6">
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                    <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Total sends</h3>
+                                    <p className="text-3xl font-black text-gray-900">{formatCount(spend.totalSends)}</p>
+                                    <p className="text-xs text-gray-400 mt-2">OTP messages sent on the gymless path</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                    <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Platform cost</h3>
+                                    <p className="text-3xl font-black text-green-600">
+                                        {formatTzs(spend.totalCostTzs)} <span className="text-sm font-medium text-gray-400">TZS</span>
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-2">Paid by Growsoft, billed to no gym</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                    <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Credits</h3>
+                                    <p className="text-3xl font-black text-gray-900">{formatCredits(spend.totalCredits)}</p>
+                                    <p className="text-xs text-gray-400 mt-2">Drawn from the provider pool</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {spend.totalSends === 0 && (
+                            <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600 flex items-center gap-2">
+                                <CheckCircle2 size={16} className="text-gray-400" />
+                                No gymless OTP sends in {range.from} → {range.to}. The zeros above are the answer, not a failed load.
+                            </div>
+                        )}
+
+                        <div>
+                            <h2 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                <Calendar size={16} className="text-blue-600" /> By day
+                            </h2>
+                            <DataTable<PortalOtpSpendDay>
+                                data={spend.byDay || []}
+                                columns={[
+                                    { header: 'Date', accessor: (d) => <span className="font-medium text-gray-900">{d.date}</span> },
+                                    { header: 'Sends', accessor: (d) => formatCount(d.sends) },
+                                    { header: 'Credits', accessor: (d) => formatCredits(d.credits) },
+                                    {
+                                        header: 'Cost (TZS)',
+                                        accessor: (d) => <span className="font-bold text-gray-900">{formatTzs(d.costTzs)}</span>
+                                    },
+                                ]}
+                            />
+                        </div>
+
+                        <div>
+                            <h2 className="text-sm font-bold text-gray-900 mb-1 flex items-center gap-2">
+                                <Building2 size={16} className="text-blue-600" /> By gym
+                            </h2>
+                            {/* Attribution, not an invoice. The ledger records the resolved
+                                gym so one gym driving all the spend is visible; no gym is
+                                debited for any of it. */}
+                            <div className="mb-3 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 flex items-start gap-2">
+                                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                <span>
+                                    <strong>Reporting only — not a bill.</strong> These gyms are not charged for any of
+                                    this. Growsoft pays for every send on this page; the gym is recorded only to show
+                                    whose members are driving the spend.
+                                </span>
+                            </div>
+                            <DataTable<PortalOtpSpendGym>
+                                data={spend.byGym || []}
+                                columns={[
+                                    {
+                                        header: 'Gym',
+                                        accessor: (g) => (
+                                            <div>
+                                                <div className="font-bold text-gray-900">{g.companyName || 'Unattributed'}</div>
+                                                <div className="text-[10px] text-gray-400 font-mono">
+                                                    {g.companyId === null || g.companyId === undefined ? 'no resolved gym' : `#${g.companyId}`}
+                                                </div>
+                                            </div>
+                                        )
+                                    },
+                                    { header: 'Sends', accessor: (g) => formatCount(g.sends) },
+                                    { header: 'Credits', accessor: (g) => formatCredits(g.credits) },
+                                    {
+                                        header: 'Platform cost (TZS)',
+                                        accessor: (g) => <span className="font-bold text-gray-900">{formatTzs(g.costTzs)}</span>
+                                    },
+                                ]}
+                            />
+                        </div>
+                    </>
+                )}
+            </section>
+
+            {/* --- Settings --- */}
+            <section>
+                <h2 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
+                    <Settings size={18} className="text-blue-600" /> Gymless OTP settings
+                </h2>
+                <p className="text-gray-500 text-sm mb-4">
+                    Cost per credit and the abuse thresholds. Every value here is a guess until there is
+                    enough traffic to set it from the ledger, which is why none of them is a constant.
+                </p>
+
+                {settingsLoading ? (
+                    <div className="bg-white p-12 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center">
+                        <Loader2 className="animate-spin text-blue-600" size={28} />
+                    </div>
+                ) : settingsError || !form || !settings ? (
+                    <div className="bg-white p-6 rounded-2xl border border-red-100 shadow-sm flex items-start gap-3">
+                        <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                        <div className="flex-1">
+                            <h3 className="font-bold text-red-900 text-sm">Settings could not be loaded</h3>
+                            <p className="text-xs text-red-700 mt-1">{settingsError || 'No settings were returned.'}</p>
+                            <p className="text-xs text-gray-500 mt-2">
+                                The current thresholds are unknown, so no values are shown — the defaults are not
+                                filled in here, because they would be indistinguishable from live configuration.
+                            </p>
+                            <button
+                                onClick={() => fetchSettings()}
+                                className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-all"
+                            >
+                                Try again
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSaveSettings} className="space-y-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {NUMERIC_SETTINGS.map(field => (
+                                <div key={field.key}>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                        {field.label}
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step={field.step}
+                                            className={inputClasses}
+                                            value={form[field.key]}
+                                            onChange={e => setForm({ ...form, [field.key]: e.target.value })}
+                                        />
+                                        <span className="text-xs font-bold text-gray-400 whitespace-nowrap">{field.unit}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{field.hint}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* IP cap enforcement. A bare checkbox reads as "on/off" and hides
+                            the fact that the off position still counts and records — it
+                            just never refuses anyone. */}
+                        <div className={`p-6 rounded-2xl shadow-sm border ${
+                            form.ipCapsEnforced ? 'bg-white border-gray-100' : 'bg-amber-50 border-amber-200'
+                        }`}>
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">IP cap enforcement</h3>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        Applies to the two per-IP thresholds above. The per-phone cap is enforced either way.
+                                    </p>
+                                </div>
+                                <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 self-start">
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm({ ...form, ipCapsEnforced: false })}
+                                        className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                            !form.ipCapsEnforced ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                    >
+                                        <Eye size={14} /> Monitoring only
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm({ ...form, ipCapsEnforced: true })}
+                                        className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                            form.ipCapsEnforced ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                    >
+                                        <ShieldCheck size={14} /> Enforcing
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="mt-4 pt-4 border-t border-gray-200/70">
+                                {form.ipCapsEnforced ? (
+                                    <div className="flex items-start gap-2 text-xs text-green-900">
+                                        <ShieldCheck size={16} className="shrink-0 mt-0.5 text-green-700" />
+                                        <span>
+                                            <strong>Enforcing — a caller over either IP cap is refused.</strong> Watch for a
+                                            carrier gateway tripping the cap: it presents as every member on one mobile
+                                            network suddenly unable to sign in.
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-start gap-2 text-xs text-amber-900">
+                                        <Eye size={16} className="shrink-0 mt-0.5 text-amber-700" />
+                                        <span>
+                                            <strong>Monitoring only — the IP caps do not block anyone.</strong> Every send
+                                            still records its IP and counts against these numbers, but a caller over the
+                                            limit is logged and let through. <strong>This is the shipped default and is
+                                            not a fault:</strong> the real CGNAT distribution is unknown, and a guessed
+                                            threshold could lock out a whole carrier gateway. Switch to enforcing once
+                                            the ledger shows what normal traffic looks like.
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {saveError && (
+                            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                                <XCircle size={16} /> {saveError}
+                            </div>
+                        )}
+                        {saveNotice && !isDirty && (
+                            <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 border border-green-100">
+                                <CheckCircle2 size={16} /> {saveNotice}
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => { setForm(toSettingsForm(settings)); setSaveError(''); setSaveNotice(''); }}
+                                disabled={!isDirty || saving}
+                                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            >
+                                Discard changes
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={!isDirty || saving}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2 shadow-sm text-sm"
+                            >
+                                {saving ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                                Save thresholds
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </section>
+
+            {/* --- Kill switch --- */}
+            {settings && (
+                <section>
+                    <div className={`p-6 rounded-2xl shadow-sm border ${
+                        settings.gymlessLoginEnabled ? 'bg-white border-gray-100' : 'bg-red-50 border-red-200'
+                    }`}>
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                                <Power className={settings.gymlessLoginEnabled ? 'text-green-600 mt-0.5' : 'text-red-600 mt-0.5'} size={20} />
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">
+                                        Gymless login is {settings.gymlessLoginEnabled ? 'ON' : 'OFF'}
+                                    </h3>
+                                    <p className="text-xs text-gray-600 mt-1 max-w-2xl">
+                                        {settings.gymlessLoginEnabled
+                                            ? 'A member who opens the portal without their gym’s QR link can sign in by phone number, and Growsoft pays for that OTP. Turning this off is the remedy when something is happening that the caps only slow down.'
+                                            : 'Members arriving without a gym QR link cannot sign in at all. Members using a gym QR code or their gym’s link are unaffected.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { setKillSwitchError(''); setKillSwitchTarget(!settings.gymlessLoginEnabled); }}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm self-start whitespace-nowrap ${
+                                    settings.gymlessLoginEnabled
+                                        ? 'bg-red-600 text-white hover:bg-red-700'
+                                        : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                            >
+                                <Power size={16} />
+                                {settings.gymlessLoginEnabled ? 'Disable gymless login' : 'Enable gymless login'}
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            <Modal
+                isOpen={killSwitchTarget !== null}
+                onClose={() => { if (!killSwitchBusy) setKillSwitchTarget(null); }}
+                title={killSwitchTarget === false ? 'Disable gymless login?' : 'Enable gymless login?'}
+            >
+                <div className="space-y-5">
+                    {killSwitchTarget === false ? (
+                        <div className="p-4 bg-red-50 rounded-xl border border-red-100 flex items-start gap-3">
+                            <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={18} />
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-red-900 text-sm">
+                                    Members who arrive without their gym&rsquo;s QR link will not be able to sign in at all.
+                                </h4>
+                                <p className="text-xs text-red-800">
+                                    Anyone opening the member portal directly — no gym QR code, no gym link — will be
+                                    told to get their gym&rsquo;s link, and no OTP will be sent. There is no other way
+                                    in for them while this is off.
+                                </p>
+                                <p className="text-xs text-red-800">
+                                    <strong>Members using a gym QR code or a gym link are unaffected.</strong> That path
+                                    bills the gym and does not touch this setting.
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="p-4 bg-green-50 rounded-xl border border-green-100 flex items-start gap-3">
+                            <CheckCircle2 className="text-green-600 shrink-0 mt-0.5" size={18} />
+                            <div className="space-y-2">
+                                <h4 className="font-bold text-green-900 text-sm">
+                                    Members without a gym link will be able to sign in by phone number again.
+                                </h4>
+                                <p className="text-xs text-green-800">
+                                    An OTP is sent only when the number is already a member at some gym. Growsoft pays
+                                    for each of those sends; no gym is debited.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {killSwitchError && (
+                        <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                            <XCircle size={16} /> {killSwitchError}
+                        </div>
+                    )}
+
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <button
+                            type="button"
+                            onClick={() => setKillSwitchTarget(null)}
+                            disabled={killSwitchBusy}
+                            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700 disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleKillSwitchConfirm}
+                            disabled={killSwitchBusy}
+                            className={`px-4 py-2 text-white rounded-lg disabled:opacity-50 font-medium flex items-center gap-2 shadow-sm ${
+                                killSwitchTarget === false ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                            }`}
+                        >
+                            {killSwitchBusy ? <Loader2 className="animate-spin" size={16} /> : <Power size={16} />}
+                            {killSwitchTarget === false ? 'Turn gymless login off' : 'Turn gymless login on'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
+        </div>
+    );
+};
+
 // --- App Root & Routing ---
 
 // A token in localStorage only means one was stored once. It says nothing about
@@ -3364,6 +4040,7 @@ const DashboardLayout = () => {
                 <Route path="/invoices" element={<InvoicesPage />} />
                 <Route path="/partners" element={<PartnersPage />} />
                 <Route path="/payouts" element={<PayoutsPage />} />
+                <Route path="/sms-spend" element={<SmsSpendPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
         </Layout>
