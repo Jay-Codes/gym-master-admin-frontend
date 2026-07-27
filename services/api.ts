@@ -10,7 +10,8 @@ import {
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit,
   BackfillPreview, BackfillRun, RunBackfillRequest,
-  PortalOtpSettings, PortalOtpSpend
+  PortalOtpSettings, PortalOtpSpend,
+  PortalAccessRequest, PortalAccessStatus
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -427,6 +428,23 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ onboarding_step: onboardingStep })
       }),
+
+    // Member portal capability — the outermost gate of the member portal, off by
+    // default. The request carries `enabled`, the response answers `portalEnabled`;
+    // the asymmetry is the agreed contract and is deliberate.
+    getPortalAccess: (companyId: number) =>
+      request<PortalAccessStatus>(`/api/superadmin/companies/${companyId}/portal-access`, {
+        method: 'GET'
+      }),
+    // The PATCH response body is not relied on: callers apply the value they asked
+    // for on success. A 2xx here means the write landed.
+    updatePortalAccess: (companyId: number, enabled: boolean) => {
+      const payload: PortalAccessRequest = { enabled };
+      return request<PortalAccessStatus>(`/api/superadmin/companies/${companyId}/portal-access`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+    },
   },
 
   backfill: {

@@ -24,7 +24,8 @@ import {
     Building2, Users, ShieldCheck, AlertTriangle, RefreshCw,
     Eye, Copy, Check, Filter, MessageSquare, CreditCard, Download, FileText,
     Handshake, DollarSign, TrendingUp, Calendar, Settings, History, Clock,
-    ArrowRight, ArrowUpRight, Wrench, RotateCcw, ChevronDown, ChevronUp
+    ArrowRight, ArrowUpRight, Wrench, RotateCcw, ChevronDown, ChevronUp,
+    Smartphone
 } from 'lucide-react';
 
 // --- Period selection (shared by Partners, Payouts and SMS Spend) ---
@@ -599,6 +600,24 @@ const CompaniesPage = () => {
     const [smsOperation, setSmsOperation] = useState<'ADD' | 'SUBTRACT' | 'SET'>('ADD');
     const [isUpdatingSms, setIsUpdatingSms] = useState(false);
     
+    // Member portal capability state.
+    //
+    // `portalEnabled === null` means "not loaded", which is a different thing from
+    // "loaded and off" — the same distinction the SMS spend screen makes. No default
+    // is invented on a failed read: rendering "Off" when the request failed would
+    // look exactly like a gym that really is switched off.
+    //
+    // The company list does not carry this field, so it is read per gym on open.
+    const [portalModalOpen, setPortalModalOpen] = useState(false);
+    const [portalCompany, setPortalCompany] = useState<Company | null>(null);
+    const [portalEnabled, setPortalEnabled] = useState<boolean | null>(null);
+    const [portalTarget, setPortalTarget] = useState<boolean | null>(null);
+    const [portalLoading, setPortalLoading] = useState(false);
+    const [portalError, setPortalError] = useState('');
+    const [portalSaving, setPortalSaving] = useState(false);
+    const [portalSaveError, setPortalSaveError] = useState('');
+    const [portalNotice, setPortalNotice] = useState('');
+
     // Onboarding Override state
     const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
     const [onboardingCompany, setOnboardingCompany] = useState<Company | null>(null);
@@ -759,6 +778,53 @@ const CompaniesPage = () => {
         }
     };
 
+    const openPortalAccess = async (company: Company) => {
+        setPortalCompany(company);
+        setPortalEnabled(null);
+        setPortalTarget(null);
+        setPortalError('');
+        setPortalSaveError('');
+        setPortalNotice('');
+        setPortalModalOpen(true);
+        setPortalLoading(true);
+        try {
+            const res = await api.companies.getPortalAccess(company.id);
+            if (res && res.success && res.data && typeof res.data.portalEnabled === 'boolean') {
+                setPortalEnabled(res.data.portalEnabled);
+                setPortalTarget(res.data.portalEnabled);
+            } else {
+                setPortalError(res?.message || 'The server did not return the portal access state for this gym.');
+            }
+        } catch (e: any) {
+            setPortalError(e?.message || 'Could not reach the portal access endpoint.');
+        } finally {
+            setPortalLoading(false);
+        }
+    };
+
+    const handlePortalAccessSave = async () => {
+        if (!portalCompany || portalTarget === null || portalTarget === portalEnabled) return;
+        setPortalSaving(true);
+        setPortalSaveError('');
+        setPortalNotice('');
+        try {
+            await api.companies.updatePortalAccess(portalCompany.id, portalTarget);
+            // A 2xx is the confirmation. The response body is not read back: the
+            // contract only fixes `portalEnabled` on the GET.
+            setPortalEnabled(portalTarget);
+            setPortalNotice(portalTarget
+                ? 'Member portal switched on for this gym.'
+                : 'Member portal switched off for this gym.');
+        } catch (e: any) {
+            // Put the selector back where the server still is, so the screen never
+            // shows a state that was not written.
+            setPortalTarget(portalEnabled);
+            setPortalSaveError(e?.message || 'Failed to change portal access for this gym.');
+        } finally {
+            setPortalSaving(false);
+        }
+    };
+
     const handleOnboardingUpdate = async () => {
         if (!onboardingCompany) return;
         setIsUpdatingOnboarding(true);
@@ -895,6 +961,13 @@ const CompaniesPage = () => {
                             title="Messaging Settings"
                         >
                             <MessageSquare size={16} />
+                        </button>
+                        <button
+                            onClick={() => openPortalAccess(c)}
+                            className="text-teal-600 hover:bg-teal-50 p-1.5 rounded-md transition-colors"
+                            title="Member Portal Access"
+                        >
+                            <Smartphone size={16} />
                         </button>
                         <button
                             onClick={() => openEdit(c)}
@@ -1142,6 +1215,155 @@ const CompaniesPage = () => {
                                 Done
                             </button>
                         </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* Member Portal Access Modal.
+                The outermost gate of the member portal and a commercial decision, so it
+                is rendered as an explicit named state with the consequence written beside
+                it — the same treatment as IP cap enforcement on the SMS spend screen —
+                rather than a bare checkbox whose off position looks like a preference.
+                This console only grants the capability. It does not send invites and does
+                not run the backfill: those are the gym's own actions in the owner app. */}
+            <Modal isOpen={portalModalOpen} onClose={() => setPortalModalOpen(false)} title="Member Portal Access">
+                {portalCompany && (
+                    <div className="space-y-6">
+                        <div className="p-4 bg-teal-50 rounded-xl border border-teal-100">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-teal-600 rounded-lg text-white">
+                                    <Smartphone size={20} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-teal-900">{portalCompany.companyName}</h4>
+                                    <p className="text-xs text-teal-700">Whether this gym is allowed to use the member portal</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {portalLoading ? (
+                            <div className="bg-white border border-gray-200 rounded-xl p-12 flex items-center justify-center shadow-sm">
+                                <Loader2 className="animate-spin text-teal-600" size={24} />
+                            </div>
+                        ) : portalError ? (
+                            // No state is shown at all. "We could not read it" and
+                            // "it is off" are different claims about a live gym.
+                            <div className="p-4 bg-white border border-red-100 rounded-xl shadow-sm">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                                    <div className="flex-1">
+                                        <h5 className="font-bold text-red-900 text-sm">Portal access could not be read</h5>
+                                        <p className="text-xs text-red-700 mt-1">{portalError}</p>
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            No state is shown for {portalCompany.companyName}. This is not an
+                                            &ldquo;off&rdquo; &mdash; whether this gym has the member portal is unknown
+                                            until the request succeeds.
+                                        </p>
+                                        <button
+                                            onClick={() => openPortalAccess(portalCompany)}
+                                            className="mt-3 px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-all"
+                                        >
+                                            Try again
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : portalTarget !== null && (
+                            <>
+                                <div className={`p-6 rounded-2xl shadow-sm border ${
+                                    portalTarget ? 'bg-white border-gray-100' : 'bg-amber-50 border-amber-200'
+                                }`}>
+                                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                        <div>
+                                            <h5 className="text-sm font-bold text-gray-900">Member portal</h5>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                A commercial decision, like SMS. The gym&rsquo;s own portal settings &mdash;
+                                                self-signup, approval, attendance visibility &mdash; are configured by its
+                                                admins and only apply once this is on.
+                                            </p>
+                                        </div>
+                                        <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200 self-start">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setPortalTarget(false); setPortalSaveError(''); setPortalNotice(''); }}
+                                                disabled={portalSaving}
+                                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                                    !portalTarget ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                                }`}
+                                            >
+                                                <XCircle size={14} /> Off
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setPortalTarget(true); setPortalSaveError(''); setPortalNotice(''); }}
+                                                disabled={portalSaving}
+                                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                                    portalTarget ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                                }`}
+                                            >
+                                                <CheckCircle2 size={14} /> On
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-gray-200/70">
+                                        {portalTarget ? (
+                                            <div className="flex items-start gap-2 text-xs text-green-900">
+                                                <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-green-700" />
+                                                <span>
+                                                    <strong>On &mdash; turning it on lets the gym&rsquo;s staff invite members
+                                                    to the portal and lets members log in.</strong> Sending those invites and
+                                                    running the roster backfill are the gym&rsquo;s own actions, not
+                                                    Growsoft&rsquo;s &mdash; nothing happens for any member until its staff act.
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-start gap-2 text-xs text-amber-900">
+                                                <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-700" />
+                                                <span>
+                                                    <strong>Off &mdash; turning it off stops it: no member of that gym can
+                                                    obtain a session, existing sessions cannot be renewed, and staff can no
+                                                    longer send invites or run the backfill.</strong> Members already signed in
+                                                    lose access when their short-lived token expires rather than instantly.
+                                                    <strong> Off is the default</strong> and is not a fault: a gym has no member
+                                                    portal until it is switched on here.
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {portalSaveError && (
+                                    <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+                                        <XCircle size={16} /> {portalSaveError}
+                                    </div>
+                                )}
+                                {portalNotice && portalTarget === portalEnabled && (
+                                    <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 border border-green-100">
+                                        <CheckCircle2 size={16} /> {portalNotice}
+                                    </div>
+                                )}
+
+                                <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPortalModalOpen(false)}
+                                        className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700 text-sm font-medium"
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handlePortalAccessSave}
+                                        disabled={portalSaving || portalTarget === portalEnabled}
+                                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2 shadow-sm text-sm"
+                                    >
+                                        {portalSaving ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                                        {portalTarget ? 'Switch the portal on' : 'Switch the portal off'}
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 )}
             </Modal>
