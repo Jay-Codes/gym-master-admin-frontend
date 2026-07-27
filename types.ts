@@ -464,13 +464,18 @@ export interface PortalOtpSpendGym {
 export interface PortalOtpSpend {
   totalSends: number;
   totalVerified: number;
-  /** Server-supplied. The UI prefers totalVerified/totalSends, which is unambiguous. */
-  conversionRate: number;
   totalCredits: number;
   totalCostTzs: number;
   byDay: PortalOtpSpendDay[];
   byGym: PortalOtpSpendGym[];
 }
+
+// NOTE: there is deliberately no `conversionRate` here. An earlier draft of the contract
+// carried one, but its unit was never defined — `0.62` and `62` are both plausible readings
+// and `1` is ambiguous under either — so the backend dropped it rather than ship a number
+// nobody could safely interpret. The UI divides `totalVerified / totalSends` itself.
+// Do not re-add it: a declared field the server never sends reads as `undefined` at runtime
+// while type-checking clean, which is the worst of both.
 
 export interface RunBackfillRequest {
   companyId: number;
