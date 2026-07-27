@@ -9,7 +9,8 @@ import {
   OnboardingStep, OnboardingData, OnboardingResponse,
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit,
-  BackfillPreview, BackfillRun, RunBackfillRequest
+  BackfillPreview, BackfillRun, RunBackfillRequest,
+  PortalOtpSettings, PortalOtpSpend
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -270,6 +271,37 @@ export const api = {
             method: 'PUT',
             body: JSON.stringify(data)
           })
+      }
+    },
+
+    // Gymless portal login — platform-funded OTP. Growsoft pays for these sends,
+    // so nothing here debits a gym.
+    portalOtp: {
+      getSettings: async () => {
+        const response = await request<any>('/api/superadmin/portal-otp-settings', { method: 'GET' });
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          return response.data[0] as ApiResponse<PortalOtpSettings>;
+        }
+        return response as ApiResponse<PortalOtpSettings>;
+      },
+      updateSettings: async (data: PortalOtpSettings) => {
+        const response = await request<any>('/api/superadmin/portal-otp-settings', {
+          method: 'PUT',
+          body: JSON.stringify(data)
+        });
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          return response.data[0] as ApiResponse<PortalOtpSettings>;
+        }
+        return response as ApiResponse<PortalOtpSettings>;
+      },
+      // from/to are calendar dates (YYYY-MM-DD), bucketed Africa/Dar_es_Salaam server-side.
+      getSpend: async (from: string, to: string) => {
+        const query = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+        const response = await request<any>(`/api/superadmin/portal-otp-spend${query}`, { method: 'GET' });
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          return response.data[0] as ApiResponse<PortalOtpSpend>;
+        }
+        return response as ApiResponse<PortalOtpSpend>;
       }
     }
   },

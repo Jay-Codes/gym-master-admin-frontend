@@ -26,9 +26,129 @@ import {
     ArrowRight, ArrowUpRight, Wrench, RotateCcw, ChevronDown, ChevronUp
 } from 'lucide-react';
 
+// --- Period selection (shared by Partners, Payouts and SMS Spend) ---
+
+export type PeriodKey = 'today' | 'week' | 'month' | 'custom';
+export interface CustomRange { start: string; end: string }
+
+// Lifted verbatim out of PartnersPage/PayoutsPage so there is one definition of
+// what "this week" means rather than three that can drift.
+const resolvePeriodRange = (
+    selectedPeriod: PeriodKey,
+    customRange: CustomRange
+): { start?: string; end?: string } => {
+    const now = new Date();
+    let start = new Date();
+    let end = new Date();
+
+    switch (selectedPeriod) {
+        case 'today':
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+            break;
+        case 'week': {
+            const day = now.getDay();
+            const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+            start.setDate(diff);
+            start.setHours(0, 0, 0, 0);
+            break;
+        }
+        case 'month':
+            start = new Date(now.getFullYear(), now.getMonth(), 1);
+            break;
+        case 'custom':
+            if (customRange.start && customRange.end) {
+                return { start: new Date(customRange.start).toISOString(), end: new Date(customRange.end).toISOString() };
+            }
+            return { start: undefined, end: undefined };
+    }
+    return { start: start.toISOString(), end: end.toISOString() };
+};
+
+// Calendar-date form (YYYY-MM-DD) for endpoints that take days, not instants.
+const resolvePeriodDays = (
+    selectedPeriod: PeriodKey,
+    customRange: CustomRange
+): { from?: string; to?: string } => {
+    const { start, end } = resolvePeriodRange(selectedPeriod, customRange);
+    const toLocalDay = (iso?: string) => {
+        if (!iso) return undefined;
+        const d = new Date(iso);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    return { from: toLocalDay(start), to: toLocalDay(end) };
+};
+
+const PeriodTabs = ({ selected, onSelect }: { selected: PeriodKey, onSelect: (p: PeriodKey) => void }) => (
+    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+        {(['today', 'week', 'month', 'custom'] as const).map((period) => (
+            <button
+                key={period}
+                onClick={() => onSelect(period)}
+                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
+                    selected === period
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+                {period}
+            </button>
+        ))}
+    </div>
+);
+
+const CustomRangeBar = ({
+    range, onChange, onApply
+}: { range: CustomRange, onChange: (r: CustomRange) => void, onApply: () => void }) => (
+    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Start Date</label>
+            <input
+                type="date"
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                value={range.start}
+                onChange={e => onChange({ ...range, start: e.target.value })}
+            />
+        </div>
+        <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">End Date</label>
+            <input
+                type="date"
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                value={range.end}
+                onChange={e => onChange({ ...range, end: e.target.value })}
+            />
+        </div>
+        <button
+            onClick={onApply}
+            className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-100"
+        >
+            Apply Range
+        </button>
+    </div>
+);
+
+// --- Number formatting ---
+// A raw float never reaches the screen: an undefined/NaN figure renders as an
+// em dash, which is visibly not the same claim as a zero.
+const formatCount = (n: number | null | undefined) =>
+    typeof n === 'number' && Number.isFinite(n)
+        ? n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+        : '—';
+
+const formatCredits = (n: number | null | undefined) =>
+    typeof n === 'number' && Number.isFinite(n)
+        ? n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+        : '—';
+
+const formatTzs = (n: number | null | undefined) =>
+    typeof n === 'number' && Number.isFinite(n)
+        ? n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+        : '—';
+
 // --- Helper Components ---
 
-const CopyableDetail = ({ label, value }: { label: string, value: string | number | boolean }) => {
+const CopyableDetail =({ label, value }: { label: string, value: string | number | boolean }) => {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = () => {
@@ -1674,33 +1794,10 @@ const PartnersPage = () => {
         defaultPayoutSchedule: 'Monthly'
     });
 
-    const getDateRange = useCallback(() => {
-        const now = new Date();
-        let start = new Date();
-        let end = new Date();
-
-        switch (selectedPeriod) {
-            case 'today':
-                start.setHours(0, 0, 0, 0);
-                end.setHours(23, 59, 59, 999);
-                break;
-            case 'week':
-                const day = now.getDay();
-                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
-                start.setDate(diff);
-                start.setHours(0, 0, 0, 0);
-                break;
-            case 'month':
-                start = new Date(now.getFullYear(), now.getMonth(), 1);
-                break;
-            case 'custom':
-                if (customRange.start && customRange.end) {
-                    return { start: new Date(customRange.start).toISOString(), end: new Date(customRange.end).toISOString() };
-                }
-                return { start: undefined, end: undefined };
-        }
-        return { start: start.toISOString(), end: end.toISOString() };
-    }, [selectedPeriod, customRange]);
+    const getDateRange = useCallback(
+        () => resolvePeriodRange(selectedPeriod, customRange),
+        [selectedPeriod, customRange]
+    );
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -1829,21 +1926,7 @@ const PartnersPage = () => {
                     <p className="text-gray-500 text-sm mt-1">Oversight for platform partners and commission configurations</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                        {(['today', 'week', 'month', 'custom'] as const).map((period) => (
-                            <button
-                                key={period}
-                                onClick={() => setSelectedPeriod(period)}
-                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
-                                    selectedPeriod === period 
-                                    ? 'bg-white text-blue-600 shadow-sm' 
-                                    : 'text-gray-500 hover:text-gray-700'
-                                }`}
-                            >
-                                {period}
-                            </button>
-                        ))}
-                    </div>
+                    <PeriodTabs selected={selectedPeriod} onSelect={setSelectedPeriod} />
 
                     <button
                         onClick={openConfigModal}
@@ -1864,32 +1947,7 @@ const PartnersPage = () => {
             </div>
 
             {selectedPeriod === 'custom' && (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6 flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase">Start Date</label>
-                        <input 
-                            type="date" 
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={customRange.start}
-                            onChange={e => setCustomRange({...customRange, start: e.target.value})}
-                        />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase">End Date</label>
-                        <input 
-                            type="date" 
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={customRange.end}
-                            onChange={e => setCustomRange({...customRange, end: e.target.value})}
-                        />
-                    </div>
-                    <button 
-                        onClick={() => fetchData()}
-                        className="px-4 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-all shadow-md shadow-blue-100"
-                    >
-                        Apply Range
-                    </button>
-                </div>
+                <CustomRangeBar range={customRange} onChange={setCustomRange} onApply={() => fetchData()} />
             )}
 
             {/* Analytics Section */}
@@ -2335,33 +2393,10 @@ const PayoutsPage = () => {
     const [isProcessingBulk, setIsProcessingBulk] = useState(false);
     const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
 
-    const getDateRange = useCallback(() => {
-        const now = new Date();
-        let start = new Date();
-        let end = new Date();
-
-        switch (selectedPeriod) {
-            case 'today':
-                start.setHours(0, 0, 0, 0);
-                end.setHours(23, 59, 59, 999);
-                break;
-            case 'week':
-                const day = now.getDay();
-                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-                start.setDate(diff);
-                start.setHours(0, 0, 0, 0);
-                break;
-            case 'month':
-                start = new Date(now.getFullYear(), now.getMonth(), 1);
-                break;
-            case 'custom':
-                if (customRange.start && customRange.end) {
-                    return { start: new Date(customRange.start).toISOString(), end: new Date(customRange.end).toISOString() };
-                }
-                return { start: undefined, end: undefined };
-        }
-        return { start: start.toISOString(), end: end.toISOString() };
-    }, [selectedPeriod, customRange]);
+    const getDateRange = useCallback(
+        () => resolvePeriodRange(selectedPeriod, customRange),
+        [selectedPeriod, customRange]
+    );
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -2503,22 +2538,8 @@ const PayoutsPage = () => {
                     <p className="text-gray-500 text-sm mt-1">Manage financial settlements and payout history</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                        {(['today', 'week', 'month', 'custom'] as const).map((period) => (
-                            <button
-                                key={period}
-                                onClick={() => setSelectedPeriod(period)}
-                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
-                                    selectedPeriod === period 
-                                    ? 'bg-white text-blue-600 shadow-sm' 
-                                    : 'text-gray-500 hover:text-gray-700'
-                                }`}
-                            >
-                                {period}
-                            </button>
-                        ))}
-                    </div>
-                    
+                    <PeriodTabs selected={selectedPeriod} onSelect={setSelectedPeriod} />
+
                     <button
                         onClick={() => setIsBulkModalOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"

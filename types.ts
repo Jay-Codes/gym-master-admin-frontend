@@ -423,6 +423,55 @@ export interface BackfillRun {
   rolledBackBy: string | null;
 }
 
+// --- Gymless portal login: platform-funded OTP ---
+// Growsoft pays for OTP SMS on the gymless login path (a member who opens the
+// portal without their gym's QR link). Gyms pay for everything else, so nothing
+// here is a gym-billable figure.
+
+export interface PortalOtpSettings {
+  /** TZS charged per SMS credit. Stamped onto each ledger row at time of send. */
+  smsUnitCostTzs: number;
+  /** Max gymless OTP sends per phone number per day. Counted across both paths. */
+  perPhoneDaily: number;
+  /** Max gymless OTP sends per client IP per day. */
+  perIpDaily: number;
+  /** Max gymless OTP sends per client IP per hour. */
+  perIpHourly: number;
+  /** false = the IP caps are recorded but never block. Ships false on purpose. */
+  ipCapsEnforced: boolean;
+  /** The kill switch. false = no one can sign in without a gym QR or link. */
+  gymlessLoginEnabled: boolean;
+}
+
+export interface PortalOtpSpendDay {
+  date: string;       // YYYY-MM-DD, bucketed Africa/Dar_es_Salaam
+  sends: number;
+  credits: number;
+  costTzs: number;
+}
+
+export interface PortalOtpSpendGym {
+  // Nullable defensively: the ledger's company_id is nullable, so a send with no
+  // resolved gym is representable even though the membership pre-check should
+  // always produce one.
+  companyId: number | null;
+  companyName: string | null;
+  sends: number;
+  credits: number;
+  costTzs: number;
+}
+
+export interface PortalOtpSpend {
+  totalSends: number;
+  totalVerified: number;
+  /** Server-supplied. The UI prefers totalVerified/totalSends, which is unambiguous. */
+  conversionRate: number;
+  totalCredits: number;
+  totalCostTzs: number;
+  byDay: PortalOtpSpendDay[];
+  byGym: PortalOtpSpendGym[];
+}
+
 export interface RunBackfillRequest {
   companyId: number;
   from: string;
