@@ -96,6 +96,26 @@ const publicRequest = async <T>(endpoint: string): Promise<T> => {
   }
 };
 
+/**
+ * Unwrap the superadmin controller's `ResponseWrapper`.
+ *
+ * That wrapper nests the real `Response` inside a single-element `data` array, so a caller that
+ * reads `res.success` or `res.data.someField` straight off the parsed body is testing `undefined`
+ * against an array and fails every time — silently, because the shape is still valid JSON. Most
+ * calls in this file already unwrap inline; this exists so the ones added later do it the same way
+ * rather than each rediscovering the convention.
+ *
+ * Falls back to the response itself when it is not wrapped, because a few superadmin endpoints
+ * return the flat shape. Deliberately does not throw: callers decide what an unreadable response
+ * means, and for the portal toggle that decision is to show "state unknown" rather than to guess.
+ */
+const unwrapSuperAdminResponse = <T,>(response: any): ApiResponse<T> => {
+  if (response?.data && Array.isArray(response.data) && response.data.length > 0) {
+    return response.data[0] as ApiResponse<T>;
+  }
+  return response as ApiResponse<T>;
+};
+
 export const api = {
   auth: {
     login: (credentials: { email: string; password: string }) =>
@@ -432,18 +452,25 @@ export const api = {
     // Member portal capability — the outermost gate of the member portal, off by
     // default. The request carries `enabled`, the response answers `portalEnabled`;
     // the asymmetry is the agreed contract and is deliberate.
-    getPortalAccess: (companyId: number) =>
-      request<PortalAccessStatus>(`/api/superadmin/companies/${companyId}/portal-access`, {
+    // Both calls go through unwrapSuperAdminResponse: this controller answers with
+    // ResponseWrapper, which buries the real Response one level down inside a
+    // single-element `data` array, exactly like every other superadmin endpoint here.
+    getPortalAccess: async (companyId: number) => {
+      const response = await request<any>(`/api/superadmin/companies/${companyId}/portal-access`, {
         method: 'GET'
-      }),
+      });
+      return unwrapSuperAdminResponse<PortalAccessStatus>(response);
+    },
     // The PATCH response body is not relied on: callers apply the value they asked
-    // for on success. A 2xx here means the write landed.
-    updatePortalAccess: (companyId: number, enabled: boolean) => {
+    // for on success. A 2xx here means the write landed — request() throws otherwise.
+    // Unwrapped anyway so the two calls cannot drift into different shapes.
+    updatePortalAccess: async (companyId: number, enabled: boolean) => {
       const payload: PortalAccessRequest = { enabled };
-      return request<PortalAccessStatus>(`/api/superadmin/companies/${companyId}/portal-access`, {
+      const response = await request<any>(`/api/superadmin/companies/${companyId}/portal-access`, {
         method: 'PATCH',
         body: JSON.stringify(payload)
       });
+      return unwrapSuperAdminResponse<PortalAccessStatus>(response);
     },
   },
 
