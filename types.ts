@@ -443,6 +443,27 @@ export interface PortalOtpSettings {
   gymlessLoginEnabled: boolean;
 }
 
+// --- Member portal capability, per gym (P-1 / P-6) ---
+// The outermost gate of the member portal. Superadmin-only, a commercial
+// decision of the same shape as `isSmsEnabled` / `messageStatus` on Company.
+// Distinct from the gym admin's own PortalSettings (self-signup, approval,
+// attendance visibility...), which configure a portal this flag must first allow
+// to exist at all. Default is off: a gym that has never been switched on here
+// has no member portal.
+//
+// The request field is `enabled` and the response field is `portalEnabled`.
+// That asymmetry is the agreed contract, not an oversight — do not "tidy" it.
+
+export interface PortalAccessRequest {
+  /** The state to move the gym to. */
+  enabled: boolean;
+}
+
+export interface PortalAccessStatus {
+  /** Whether this gym is currently allowed to use the member portal. */
+  portalEnabled: boolean;
+}
+
 export interface PortalOtpSpendDay {
   date: string;       // YYYY-MM-DD, bucketed Africa/Dar_es_Salaam
   sends: number;
