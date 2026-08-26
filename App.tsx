@@ -1529,6 +1529,7 @@ const UsersPage = () => {
     const [reasonModalOpen, setReasonModalOpen] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [toggleReason, setToggleReason] = useState('');
+    const [detailsUser, setDetailsUser] = useState<User | null>(null);
 
     // Create User Form Data - Requires Company ID
     const [formData, setFormData] = useState<CreateUserRequest & { companyId: string }>({
@@ -1616,6 +1617,13 @@ const UsersPage = () => {
                         )
                     },
                     {
+                        header: 'Phone', accessor: (u) => (
+                            u.phoneNumber
+                                ? <a href={`tel:${u.phoneNumber}`} className="text-blue-600 hover:underline">{u.phoneNumber}</a>
+                                : <span className="text-gray-400">—</span>
+                        )
+                    },
+                    {
                         header: 'Role', accessor: (u) => (
                             <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded border border-gray-200">{u.role}</span>
                         )
@@ -1631,6 +1639,7 @@ const UsersPage = () => {
                 ]}
                 actions={(u: User) => (
                     <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setDetailsUser(u)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded-md" title="View Details"><Eye size={16} /></button>
                         <button onClick={() => initiateToggle(u.id)} className="text-orange-600 hover:bg-orange-50 p-1.5 rounded-md" title="Toggle Status"><Power size={16} /></button>
                         <button onClick={() => handleDelete(u.id)} className="text-red-600 hover:bg-red-50 p-1.5 rounded-md" title="Delete"><Trash2 size={16} /></button>
                     </div>
@@ -1687,6 +1696,84 @@ const UsersPage = () => {
                         <button onClick={handleToggleConfirm} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700">Confirm</button>
                     </div>
                 </div>
+            </Modal>
+
+            {/* User Details Modal */}
+            <Modal isOpen={!!detailsUser} onClose={() => setDetailsUser(null)} title="User Details">
+                {detailsUser && (
+                    <div className="space-y-5">
+                        <div>
+                            <div className="text-lg font-semibold text-gray-900">{detailsUser.name}</div>
+                            <span className={`inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full ${detailsUser.isActivated !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {detailsUser.isActivated !== false ? 'Active' : 'Inactive'}
+                            </span>
+                        </div>
+
+                        <div>
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Contact</h4>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                <div className="text-gray-500">Phone</div>
+                                <div>
+                                    {detailsUser.phoneNumber
+                                        ? <a href={`tel:${detailsUser.phoneNumber}`} className="text-blue-600 hover:underline">{detailsUser.phoneNumber}</a>
+                                        : <span className="text-gray-400">Not provided</span>}
+                                    {detailsUser.phoneNumber && (
+                                        <button onClick={() => navigator.clipboard.writeText(detailsUser.phoneNumber)} className="ml-2 text-gray-400 hover:text-gray-600 align-middle" title="Copy phone"><Copy size={13} /></button>
+                                    )}
+                                </div>
+                                <div className="text-gray-500">Email</div>
+                                <div>
+                                    <a href={`mailto:${detailsUser.email}`} className="text-blue-600 hover:underline break-all">{detailsUser.email}</a>
+                                    <button onClick={() => navigator.clipboard.writeText(detailsUser.email)} className="ml-2 text-gray-400 hover:text-gray-600 align-middle" title="Copy email"><Copy size={13} /></button>
+                                </div>
+                                <div className="text-gray-500">Phone verified</div>
+                                <div>{detailsUser.phoneVerified ? 'Yes' : 'No'}</div>
+                                <div className="text-gray-500">Email verified</div>
+                                <div>{detailsUser.emailVerified ? 'Yes' : 'No'}</div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Account</h4>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                <div className="text-gray-500">Role</div>
+                                <div>{detailsUser.role}</div>
+                                <div className="text-gray-500">Onboarding step</div>
+                                <div>{detailsUser.onboardingStep || 'N/A'}</div>
+                                <div className="text-gray-500">Accepted T&C</div>
+                                <div>{detailsUser.acceptedTC ? 'Yes' : 'No'}</div>
+                                <div className="text-gray-500">Registered</div>
+                                <div>{detailsUser.createdAt ? new Date(detailsUser.createdAt).toLocaleString() : 'N/A'}</div>
+                                {detailsUser.deactivatedAt && (<>
+                                    <div className="text-gray-500">Deactivated</div>
+                                    <div>{new Date(detailsUser.deactivatedAt).toLocaleString()}</div>
+                                    <div className="text-gray-500">Reason</div>
+                                    <div>{detailsUser.deactivationReason || 'N/A'}</div>
+                                </>)}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Company</h4>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                                <div className="text-gray-500">Company</div>
+                                <div>{detailsUser.companyProfile ? `${detailsUser.companyProfile.companyName || 'Unnamed'} (ID ${detailsUser.companyProfile.id})` : 'N/A'}</div>
+                                {detailsUser.companyProfile?.phone && (<>
+                                    <div className="text-gray-500">Company phone</div>
+                                    <div><a href={`tel:${detailsUser.companyProfile.phone}`} className="text-blue-600 hover:underline">{detailsUser.companyProfile.phone}</a></div>
+                                </>)}
+                                {detailsUser.companyProfile?.companyEmail && (<>
+                                    <div className="text-gray-500">Company email</div>
+                                    <div><a href={`mailto:${detailsUser.companyProfile.companyEmail}`} className="text-blue-600 hover:underline break-all">{detailsUser.companyProfile.companyEmail}</a></div>
+                                </>)}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end pt-2">
+                            <button onClick={() => setDetailsUser(null)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-gray-700">Close</button>
+                        </div>
+                    </div>
+                )}
             </Modal>
         </div>
     );

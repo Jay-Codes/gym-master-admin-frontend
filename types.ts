@@ -50,6 +50,12 @@ export interface User {
   deactivatedAt: string | null;
   deactivationReason: string | null;
 
+  // Onboarding / verification
+  onboardingStep?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  acceptedTC?: boolean;
+
   // Auth & Security
   username: string;
   authorities: { authority: string }[];
