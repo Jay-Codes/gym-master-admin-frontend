@@ -18,6 +18,10 @@ import {
     PortalOtpSettings, PortalOtpSpend, PortalOtpSpendDay, PortalOtpSpendGym
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
+import { SmsPricingPage } from './components/SmsPricingPage';
+import { SmsPurchasesPage } from './components/SmsPurchasesPage';
+import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
+import { CompanySenderIds } from './components/CompanySenderIds';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
@@ -1050,6 +1054,9 @@ const CompaniesPage = () => {
                                 <CopyableDetail label="Current Status" value={viewingCompany.isActivated ? 'Active' : 'Suspended'} />
                             </div>
                         </div>
+
+                        <CompanySmsPricingOverride key={`rate-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanySenderIds key={`senders-${viewingCompany.id}`} companyId={viewingCompany.id} />
                     </div>
                 )}
             </Modal>
@@ -4350,6 +4357,8 @@ const DashboardLayout = () => {
                 <Route path="/partners" element={<PartnersPage />} />
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
+                <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
         </Layout>

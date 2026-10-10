@@ -511,3 +511,89 @@ export interface RunBackfillRequest {
   confirm: boolean;
   force: boolean;
 }
+// --- SMS credits: pricing, purchases, sender IDs (S2-T6) ---
+// Built against the pinned contract in new-feature/2026-10-10/implementation-plan.md § 10 before
+// the backend existed. Every field not named in § 10 is an assumption recorded in run/S2-T6.md.
+
+/** Platform SMS pricing. Rate is TZS per credit, exclusive of VAT (D9). */
+export interface SmsPricingSettings {
+  rateTzs: number;
+  /** Percentage, e.g. 18.00 means 18%. */
+  vatRatePercent: number;
+  minCredits: number;
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+/** PUT body: null leaves a field unchanged. */
+export interface UpdateSmsPricingRequest {
+  rateTzs: number | null;
+  vatRatePercent: number | null;
+  minCredits: number | null;
+}
+
+/** Per-gym rate override. Replaces the platform rate for this gym only; VAT and minimum still apply. */
+export interface SmsPricingOverride {
+  rateTzs: number;
+  note: string | null;
+  updatedBy?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
+ * One SMS credit purchase. `status` is the platform payment status
+ * (pending, completed, failed, voided, expired, cancelled); reversal is carried by `reversedAt`.
+ */
+export interface SmsPurchase {
+  paymentId: string;
+  companyId: number;
+  companyName?: string | null;
+  credits: number;
+  unitRateTzs?: number | null;
+  subtotalTzs?: number | null;
+  vatRatePercent?: number | null;
+  vatTzs?: number | null;
+  totalTzs: number;
+  status: string;
+  invoiceNumber?: string | null;
+  createdAt: string;
+  paidAt?: string | null;
+  reversedAt?: string | null;
+  reversedBy?: string | null;
+  reversalReason?: string | null;
+}
+
+export interface SmsPurchaseFilters {
+  companyId?: number;
+  from?: string;   // YYYY-MM-DD
+  to?: string;     // YYYY-MM-DD
+  status?: string;
+  page?: number;
+  size?: number;
+}
+
+export type SenderIdStatus = 'ACTIVE' | 'DISABLED';
+
+/** An approved sender ID. Registration with Beem/TCRA happens offline (D1). */
+export interface CompanySenderId {
+  id: number;
+  senderName: string;
+  status: SenderIdStatus;
+  isDefault: boolean;
+  notes: string | null;
+  createdBy?: string | null;
+  createdAt?: string | null;
+}
+
+export interface CreateSenderIdRequest {
+  senderName: string;
+  status: SenderIdStatus;
+  isDefault: boolean;
+  notes: string | null;
+}
+
+export interface UpdateSenderIdRequest {
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
+}

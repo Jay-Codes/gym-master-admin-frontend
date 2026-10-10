@@ -11,7 +11,10 @@ import {
   UpdatePlanRequest, PlanAudit,
   BackfillPreview, BackfillRun, RunBackfillRequest,
   PortalOtpSettings, PortalOtpSpend,
-  PortalAccessRequest, PortalAccessStatus
+  PortalAccessRequest, PortalAccessStatus,
+  SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride,
+  SmsPurchase, SmsPurchaseFilters,
+  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -68,7 +71,10 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
     }
 
     if (!response.ok) {
-      throw new Error(data.message || `Request failed with status ${response.status}`);
+      // `status` lets a caller tell "not there" (404) from a real failure.
+      const err: any = new Error(data.message || `Request failed with status ${response.status}`);
+      err.status = response.status;
+      throw err;
     }
 
     return data;
@@ -472,6 +478,72 @@ export const api = {
       });
       return unwrapSuperAdminResponse<PortalAccessStatus>(response);
     },
+  },
+
+  // SMS credits: platform pricing, per-gym override, purchases/reversal, sender IDs (S2-T6).
+  // Written against implementation-plan.md § 10 before the backend existed — this block is the one
+  // place to reconcile when it lands. Every call unwraps the superadmin ResponseWrapper, falling
+  // back to the flat shape (see unwrapSuperAdminResponse).
+  smsAdmin: {
+    getPricing: async () =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'GET' })),
+    // null fields are left unchanged server-side.
+    updatePricing: async (data: UpdateSmsPricingRequest) =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'PUT', body: JSON.stringify(data) })),
+
+    // Resolves to data: null when the gym has no override (404 or empty body).
+    getPricingOverride: async (companyId: number): Promise<ApiResponse<SmsPricingOverride | null>> => {
+      try {
+        const res = unwrapSuperAdminResponse<SmsPricingOverride | null>(
+          await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'GET' }));
+        return res;
+      } catch (e: any) {
+        if (e?.status === 404) return { success: true, message: 'No override', data: null };
+        throw e;
+      }
+    },
+    setPricingOverride: async (companyId: number, data: { rateTzs: number; note: string | null }) =>
+      unwrapSuperAdminResponse<SmsPricingOverride>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, {
+          method: 'PUT', body: JSON.stringify(data)
+        })),
+    deletePricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'DELETE' })),
+
+    listPurchases: async (filters: SmsPurchaseFilters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.companyId) params.set('companyId', String(filters.companyId));
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      if (filters.status) params.set('status', filters.status);
+      params.set('page', String(filters.page ?? 0));
+      params.set('size', String(filters.size ?? 20));
+      return unwrapSuperAdminResponse<PageableResponse<SmsPurchase>>(
+        await request<any>(`/api/superadmin/sms-purchases?${params.toString()}`, { method: 'GET' }));
+    },
+    // Debits the full purchased credits; the gym's balance may go negative. Money refund is offline.
+    reversePurchase: async (paymentId: string, reason: string) =>
+      unwrapSuperAdminResponse<SmsPurchase>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/reverse`, {
+          method: 'POST', body: JSON.stringify({ reason })
+        })),
+
+    listSenderIds: async (companyId: number) =>
+      unwrapSuperAdminResponse<CompanySenderId[]>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, { method: 'GET' })),
+    createSenderId: async (companyId: number, data: CreateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, {
+          method: 'POST', body: JSON.stringify(data)
+        })),
+    updateSenderId: async (companyId: number, senderId: number, data: UpdateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
+          method: 'PATCH', body: JSON.stringify(data)
+        })),
   },
 
   backfill: {
