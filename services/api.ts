@@ -12,7 +12,7 @@ import {
   BackfillPreview, BackfillRun, RunBackfillRequest,
   PortalOtpSettings, PortalOtpSpend,
   PortalAccessRequest, PortalAccessStatus,
-  SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride,
+  SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
   SmsPurchase, SmsPurchaseFilters,
   CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
 } from '../types';
@@ -74,6 +74,9 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
       // `status` lets a caller tell "not there" (404) from a real failure.
       const err: any = new Error(data.message || `Request failed with status ${response.status}`);
       err.status = response.status;
+      // Field-level validation messages (`Response.errors`: {field: [message]}), when present.
+      const fieldErrors = data?.errors ?? (Array.isArray(data?.data) ? data.data[0]?.errors : undefined);
+      if (fieldErrors && typeof fieldErrors === 'object') err.errors = fieldErrors;
       throw err;
     }
 
@@ -481,38 +484,34 @@ export const api = {
   },
 
   // SMS credits: platform pricing, per-gym override, purchases/reversal, sender IDs (S2-T6).
-  // Written against implementation-plan.md § 10 before the backend existed — this block is the one
-  // place to reconcile when it lands. Every call unwraps the superadmin ResponseWrapper, falling
-  // back to the flat shape (see unwrapSuperAdminResponse).
+  // Pricing, override and purchases are aligned with the shipped backend (S2-T1 / S2-T3, see
+  // run/S2-T6a.md): flat `Response` envelope, list `data` is a `PagedResponse`. A 400 carries
+  // `err.errors` ({field: [message]}) for inline field errors. Sender IDs (S3-T1) are not built yet
+  // and still follow the plan § 10 assumption.
   smsAdmin: {
     getPricing: async () =>
       unwrapSuperAdminResponse<SmsPricingSettings>(
         await request<any>('/api/superadmin/sms-pricing', { method: 'GET' })),
-    // null fields are left unchanged server-side.
+    // null fields are left unchanged server-side; nothing is saved if any field is invalid (400).
     updatePricing: async (data: UpdateSmsPricingRequest) =>
       unwrapSuperAdminResponse<SmsPricingSettings>(
         await request<any>('/api/superadmin/sms-pricing', { method: 'PUT', body: JSON.stringify(data) })),
 
-    // Resolves to data: null when the gym has no override (404 or empty body).
-    getPricingOverride: async (companyId: number): Promise<ApiResponse<SmsPricingOverride | null>> => {
-      try {
-        const res = unwrapSuperAdminResponse<SmsPricingOverride | null>(
-          await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'GET' }));
-        return res;
-      } catch (e: any) {
-        if (e?.status === 404) return { success: true, message: 'No override', data: null };
-        throw e;
-      }
-    },
-    setPricingOverride: async (companyId: number, data: { rateTzs: number; note: string | null }) =>
+    // 200 with data: null when the gym has no override. 404 means the company does not exist.
+    getPricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<SmsPricingOverride | null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'GET' })),
+    setPricingOverride: async (companyId: number, data: SetSmsPricingOverrideRequest) =>
       unwrapSuperAdminResponse<SmsPricingOverride>(
         await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, {
           method: 'PUT', body: JSON.stringify(data)
         })),
+    // Idempotent: 200 with data: null whether or not an override existed.
     deletePricingOverride: async (companyId: number) =>
       unwrapSuperAdminResponse<null>(
         await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'DELETE' })),
 
+    // 400 on a malformed date, from > to, or an unknown status.
     listPurchases: async (filters: SmsPurchaseFilters = {}) => {
       const params = new URLSearchParams();
       if (filters.companyId) params.set('companyId', String(filters.companyId));
@@ -521,10 +520,12 @@ export const api = {
       if (filters.status) params.set('status', filters.status);
       params.set('page', String(filters.page ?? 0));
       params.set('size', String(filters.size ?? 20));
-      return unwrapSuperAdminResponse<PageableResponse<SmsPurchase>>(
+      return unwrapSuperAdminResponse<PagedResponse<SmsPurchase>>(
         await request<any>(`/api/superadmin/sms-purchases?${params.toString()}`, { method: 'GET' }));
     },
     // Debits the full purchased credits; the gym's balance may go negative. Money refund is offline.
+    // 200 data = the reversed row. 409 already reversed / not completed; 400 not an SMS purchase or
+    // bad reason; 404 unknown payment.
     reversePurchase: async (paymentId: string, reason: string) =>
       unwrapSuperAdminResponse<SmsPurchase>(
         await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/reverse`, {

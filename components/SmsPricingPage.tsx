@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { api } from '../services/api';
-import { SmsPricingSettings, UpdateSmsPricingRequest } from '../types';
+import { FieldErrors, SMS_PRICING_LIMITS, SmsPricingSettings, UpdateSmsPricingRequest } from '../types';
 
 // --- SMS credit pricing (platform settings) ---
 //
@@ -11,6 +11,8 @@ import { SmsPricingSettings, UpdateSmsPricingRequest } from '../types';
 //
 // The PUT treats null as "unchanged", so only edited fields are sent. A change re-prices future
 // purchases only — a payment already initiated keeps the price frozen on it (S2-F3).
+// Limits mirror the backend (S2-T1): rate 1..100000, VAT 0..100 with at most 2 decimals, minimum
+// 1..1000000. A 400 carries errors.<field>, shown under the field; nothing is saved in that case.
 
 type FieldKey = 'rateTzs' | 'vatRatePercent' | 'minCredits';
 
@@ -22,14 +24,16 @@ const toForm = (s: SmsPricingSettings): FormState => ({
     minCredits: s.minCredits == null ? '' : String(s.minCredits),
 });
 
-const FIELDS: { key: FieldKey; label: string; unit: string; step: string; integer: boolean; max?: number; hint: string }[] = [
+const FIELDS: { key: FieldKey; label: string; unit: string; step: string; integer: boolean; min: number; max: number; hint: string }[] = [
     {
         key: 'rateTzs',
         label: 'Rate per credit',
         unit: 'TZS per credit, excl. VAT',
         step: '1',
         integer: true,
-        hint: 'Whole shillings. One credit is one 160-character SMS segment (70 if the message needs Unicode). A gym with its own override pays that instead.',
+        min: SMS_PRICING_LIMITS.rateTzs.min,
+        max: SMS_PRICING_LIMITS.rateTzs.max,
+        hint: 'Whole shillings, 1 to 100,000. One credit is one 160-character SMS segment (70 if the message needs Unicode). A gym with its own override pays that instead.',
     },
     {
         key: 'vatRatePercent',
@@ -37,8 +41,9 @@ const FIELDS: { key: FieldKey; label: string; unit: string; step: string; intege
         unit: '%',
         step: '0.01',
         integer: false,
-        max: 100,
-        hint: 'Added on top of the subtotal and rounded half-up to the shilling. Default 18.00%.',
+        min: SMS_PRICING_LIMITS.vatRatePercent.min,
+        max: SMS_PRICING_LIMITS.vatRatePercent.max,
+        hint: '0 to 100, at most two decimals. Added on top of the subtotal and rounded half-up to the shilling. Default 18.00%.',
     },
     {
         key: 'minCredits',
@@ -46,7 +51,9 @@ const FIELDS: { key: FieldKey; label: string; unit: string; step: string; intege
         unit: 'credits',
         step: '1',
         integer: true,
-        hint: 'The smallest number of credits a gym can buy in one payment.',
+        min: SMS_PRICING_LIMITS.minCredits.min,
+        max: SMS_PRICING_LIMITS.minCredits.max,
+        hint: 'The smallest number of credits a gym can buy in one payment, 1 to 1,000,000.',
     },
 ];
 
@@ -57,6 +64,7 @@ export const SmsPricingPage: React.FC = () => {
     const [loadError, setLoadError] = useState('');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
     const [notice, setNotice] = useState('');
 
     const load = useCallback(async () => {
@@ -89,26 +97,38 @@ export const SmsPricingPage: React.FC = () => {
         !!form && !!settings && form[key].trim() !== String(settings[key] ?? '');
     const isDirty = FIELDS.some(f => changed(f.key));
 
-    const buildPayload = (): UpdateSmsPricingRequest | string => {
+    // Client-side hint only; the server re-validates and answers 400 errors.<field>.
+    const validateField = (f: typeof FIELDS[number], raw: string): string | null => {
+        if (raw === '') return `${f.label} cannot be blank.`;
+        const pattern = f.integer ? /^\d+$/ : /^\d+(\.\d{1,2})?$/;
+        if (!pattern.test(raw)) {
+            return f.integer
+                ? `${f.label} must be a whole number of ${f.unit}.`
+                : `${f.label} allows at most two decimal places.`;
+        }
+        const value = Number(raw);
+        if (value < f.min || value > f.max) {
+            return `${f.label} must be between ${f.min.toLocaleString('en-US')} and ${f.max.toLocaleString('en-US')}.`;
+        }
+        return null;
+    };
+
+    const buildPayload = (): UpdateSmsPricingRequest | Partial<Record<FieldKey, string>> | string => {
         if (!form) return 'Settings are not loaded.';
         const out: UpdateSmsPricingRequest = { rateTzs: null, vatRatePercent: null, minCredits: null };
+        const errs: Partial<Record<FieldKey, string>> = {};
         for (const f of FIELDS) {
             if (!changed(f.key)) continue;
             const raw = form[f.key].trim();
-            if (raw === '') return `${f.label} cannot be blank.`;
-            const value = Number(raw);
-            if (!Number.isFinite(value) || value < 0) return `${f.label} must be zero or above.`;
-            if (f.integer && !Number.isInteger(value)) return `${f.label} must be a whole number of ${f.unit}.`;
-            if (f.max !== undefined && value > f.max) return `${f.label} cannot exceed ${f.max}${f.unit}.`;
-            if (f.key === 'vatRatePercent' && Math.round(value * 100) !== value * 100) {
-                return `${f.label} allows at most two decimal places.`;
-            }
-            if (f.key === 'rateTzs' && value === 0) return 'Rate per credit must be at least 1 TZS.';
-            if (f.key === 'minCredits' && value === 0) return 'Minimum purchase must be at least 1 credit.';
-            out[f.key] = value;
+            const err = validateField(f, raw);
+            if (err) errs[f.key] = err;
+            else out[f.key] = Number(raw);
         }
-        return out;
+        return Object.keys(errs).length > 0 ? errs : out;
     };
+
+    const isPayload = (p: unknown): p is UpdateSmsPricingRequest =>
+        !!p && typeof p === 'object' && 'rateTzs' in (p as object);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -118,8 +138,15 @@ export const SmsPricingPage: React.FC = () => {
             setNotice('');
             return;
         }
+        if (!isPayload(payload)) {
+            setFieldErrors(payload);
+            setSaveError('');
+            setNotice('');
+            return;
+        }
         setSaving(true);
         setSaveError('');
+        setFieldErrors({});
         setNotice('');
         try {
             const res = await api.smsAdmin.updatePricing(payload);
@@ -132,7 +159,19 @@ export const SmsPricingPage: React.FC = () => {
             }
             setNotice('Pricing saved. Purchases already in progress keep the price they started with.');
         } catch (e: any) {
-            setSaveError(e?.message || 'Failed to save the SMS pricing.');
+            // 400: errors.<field> → under each field. Nothing was saved.
+            const serverErrs: FieldErrors | undefined = e?.errors;
+            const mapped: Partial<Record<FieldKey, string>> = {};
+            if (serverErrs) {
+                for (const f of FIELDS) {
+                    const msgs = serverErrs[f.key];
+                    if (Array.isArray(msgs) && msgs.length > 0) mapped[f.key] = msgs.join(' ');
+                }
+            }
+            setFieldErrors(mapped);
+            setSaveError(Object.keys(mapped).length > 0
+                ? 'Nothing was saved. Fix the highlighted fields.'
+                : (e?.message || 'Failed to save the SMS pricing.'));
         } finally {
             setSaving(false);
         }
@@ -203,15 +242,23 @@ export const SmsPricingPage: React.FC = () => {
                                 <div className="flex items-center gap-2">
                                     <input
                                         type="number"
-                                        min="0"
+                                        min={f.min}
                                         step={f.step}
                                         max={f.max}
                                         value={form[f.key]}
-                                        onChange={e => { setForm({ ...form, [f.key]: e.target.value }); setNotice(''); setSaveError(''); }}
-                                        className={inputClasses}
+                                        onChange={e => {
+                                            setForm({ ...form, [f.key]: e.target.value });
+                                            setNotice(''); setSaveError('');
+                                            setFieldErrors(prev => ({ ...prev, [f.key]: undefined }));
+                                        }}
+                                        aria-invalid={!!fieldErrors[f.key]}
+                                        className={`${inputClasses}${fieldErrors[f.key] ? ' border-red-400' : ''}`}
                                     />
                                     <span className="text-xs text-gray-500 whitespace-nowrap">{f.unit}</span>
                                 </div>
+                                {fieldErrors[f.key] && (
+                                    <p className="text-xs text-red-700 mt-1 flex items-center gap-1"><XCircle size={12} /> {fieldErrors[f.key]}</p>
+                                )}
                                 {changed(f.key) && (
                                     <p className="text-xs text-amber-700 mt-1">Was {String(settings?.[f.key] ?? '—')}</p>
                                 )}
@@ -230,7 +277,7 @@ export const SmsPricingPage: React.FC = () => {
 
                     {(settings?.updatedAt || settings?.updatedBy) && (
                         <p className="text-xs text-gray-400">
-                            Last changed {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : ''}
+                            Last changed {settings?.updatedAt ? `${new Date(settings.updatedAt).toLocaleString('en-GB', { timeZone: 'Africa/Dar_es_Salaam' })} EAT` : ''}
                             {settings?.updatedBy ? ` by ${settings.updatedBy}` : ''}
                         </p>
                     )}
@@ -249,7 +296,7 @@ export const SmsPricingPage: React.FC = () => {
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
-                            onClick={() => { if (settings) setForm(toForm(settings)); setSaveError(''); }}
+                            onClick={() => { if (settings) setForm(toForm(settings)); setSaveError(''); setFieldErrors({}); }}
                             disabled={!isDirty || saving}
                             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 bg-white disabled:opacity-50"
                         >

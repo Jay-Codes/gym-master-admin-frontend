@@ -512,8 +512,34 @@ export interface RunBackfillRequest {
   force: boolean;
 }
 // --- SMS credits: pricing, purchases, sender IDs (S2-T6) ---
-// Built against the pinned contract in new-feature/2026-10-10/implementation-plan.md § 10 before
-// the backend existed. Every field not named in § 10 is an assumption recorded in run/S2-T6.md.
+// Pricing, override and purchase types match the shipped backend (S2-T1 / S2-T3; reconciled in
+// S2-T6a). Sender ID types below are still the plan § 10 assumption: S3-T1 is not built yet.
+
+/** Field-level validation messages from a 400 (`Response.errors`): {field: [message]}. */
+export type FieldErrors = Record<string, string[]>;
+
+/**
+ * The backend's `PagedResponse` (com.jerrycode.gym_services.response.PagedResponse) — not the
+ * Spring page shape of `PageableResponse`. `currentPage` is 0-based.
+ */
+export interface PagedResponse<T> {
+  content: T[];
+  currentPage: number;
+  pageSize: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+/** Shipped limits (SmsPricingService validation). Client hints mirror them; the server decides. */
+export const SMS_PRICING_LIMITS = {
+  rateTzs: { min: 1, max: 100000 },
+  vatRatePercent: { min: 0, max: 100 },   // at most 2 decimals
+  minCredits: { min: 1, max: 1000000 },
+  overrideNoteMax: 500,
+  reversalReasonMax: 500,
+} as const;
 
 /** Platform SMS pricing. Rate is TZS per credit, exclusive of VAT (D9). */
 export interface SmsPricingSettings {
@@ -521,8 +547,10 @@ export interface SmsPricingSettings {
   /** Percentage, e.g. 18.00 means 18%. */
   vatRatePercent: number;
   minCredits: number;
-  updatedBy?: string | null;
-  updatedAt?: string | null;
+  /** Superadmin label of the last change; null until first changed. */
+  updatedBy: string | null;
+  /** ISO-8601 instant (UTC). */
+  updatedAt: string | null;
 }
 
 /** PUT body: null leaves a field unchanged. */
@@ -534,42 +562,60 @@ export interface UpdateSmsPricingRequest {
 
 /** Per-gym rate override. Replaces the platform rate for this gym only; VAT and minimum still apply. */
 export interface SmsPricingOverride {
+  companyId: number;
   rateTzs: number;
   note: string | null;
-  updatedBy?: string | null;
-  updatedAt?: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
 }
 
+/** PUT body: rateTzs required (1..100000); note optional, ≤500, blank → null server-side. */
+export interface SetSmsPricingOverrideRequest {
+  rateTzs: number;
+  note?: string | null;
+}
+
+/** The payment's own status, lower case. A reversed purchase stays `completed` with `reversedAt` set. */
+export type SmsPurchaseStatus = 'pending' | 'completed' | 'failed' | 'voided' | 'expired' | 'cancelled';
+
 /**
- * One SMS credit purchase. `status` is the platform payment status
- * (pending, completed, failed, voided, expired, cancelled); reversal is carried by `reversedAt`.
+ * One SMS credit purchase (backend `SmsCreditPurchaseResponse`). Price fields are frozen at
+ * initiation, whole TZS. Timestamps are ISO-8601 with the +03:00 offset, or null. `invoiceNumber`
+ * is `INV-XXXXXXXX` once completed. `reversedBy` is the reversing superadmin's email.
  */
 export interface SmsPurchase {
   paymentId: string;
   companyId: number;
-  companyName?: string | null;
+  companyName: string | null;
   credits: number;
-  unitRateTzs?: number | null;
-  subtotalTzs?: number | null;
-  vatRatePercent?: number | null;
-  vatTzs?: number | null;
+  unitRateTzs: number | null;
+  subtotalTzs: number | null;
+  vatRatePercent: number | null;
+  vatTzs: number | null;
   totalTzs: number;
-  status: string;
-  invoiceNumber?: string | null;
+  status: SmsPurchaseStatus | string;
+  invoiceNumber: string | null;
   createdAt: string;
-  paidAt?: string | null;
-  reversedAt?: string | null;
-  reversedBy?: string | null;
-  reversalReason?: string | null;
+  paidAt: string | null;
+  reversedAt: string | null;
+  reversedBy: string | null;
+  reversalReason: string | null;
 }
+
+/**
+ * Status filter values the list accepts (case-insensitive): `reversed` = reversed at any time;
+ * `completed` = completed and not reversed; `failed` = failed, voided, expired or cancelled;
+ * the rest match exactly. Anything else is a 400.
+ */
+export type SmsPurchaseStatusFilter = 'completed' | 'pending' | 'failed' | 'reversed' | 'voided' | 'expired' | 'cancelled';
 
 export interface SmsPurchaseFilters {
   companyId?: number;
-  from?: string;   // YYYY-MM-DD
-  to?: string;     // YYYY-MM-DD
-  status?: string;
-  page?: number;
-  size?: number;
+  from?: string;   // YYYY-MM-DD, inclusive EAT calendar day
+  to?: string;     // YYYY-MM-DD, inclusive EAT calendar day
+  status?: SmsPurchaseStatusFilter;
+  page?: number;   // 0-based
+  size?: number;   // server clamps to 1..100
 }
 
 export type SenderIdStatus = 'ACTIVE' | 'DISABLED';

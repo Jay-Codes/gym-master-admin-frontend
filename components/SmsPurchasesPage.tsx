@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Modal } from './Modal';
-import { Company, SmsPurchase } from '../types';
+import { Company, SMS_PRICING_LIMITS, SmsPurchase, SmsPurchaseStatusFilter } from '../types';
 
 // --- SMS credit purchases (all gyms) and reversal ---
 //
@@ -14,24 +14,36 @@ import { Company, SmsPurchase } from '../types';
 // / mobile-money reversal). If the gym has already spent some of the credits the debit still
 // happens in full and its balance goes negative, which blocks every paid send until it tops up
 // (user decision Q1, 2026-10-10).
+//
+// Shipped contract (S2-T3, reconciled in S2-T6a): list data is a PagedResponse {content,
+// currentPage, pageSize, totalElements, totalPages, first, last}; row status is the payment's own
+// lower-case status and a reversed purchase stays `completed` with `reversedAt` set. Reverse
+// returns the reversed row (updated in place); 409 = already reversed / not completed.
 
-const STATUS_OPTIONS: { value: string; label: string }[] = [
+// Filter semantics are the server's: `completed` excludes reversed purchases, `reversed` is any
+// purchase reversed at any time, `failed` also covers voided, expired and cancelled.
+const STATUS_OPTIONS: { value: '' | SmsPurchaseStatusFilter; label: string }[] = [
     { value: '', label: 'All statuses' },
-    { value: 'completed', label: 'Completed' },
+    { value: 'completed', label: 'Completed (not reversed)' },
     { value: 'pending', label: 'Pending' },
-    { value: 'failed', label: 'Failed' },
+    { value: 'failed', label: 'Failed / voided / expired / cancelled' },
     { value: 'reversed', label: 'Reversed' },
 ];
+
+const REASON_MAX = SMS_PRICING_LIMITS.reversalReasonMax;
 
 const PAGE_SIZE = 20;
 
 const tzs = (n: number | null | undefined) =>
     n === null || n === undefined ? '—' : `${n.toLocaleString('en-US')} TZS`;
 
-const fmtDate = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : '—');
+// Timestamps arrive as ISO-8601 with +03:00; show them in Dar es Salaam time whatever the browser zone.
+const fmtDate = (s: string | null | undefined) =>
+    (s ? new Date(s).toLocaleString('en-GB', { timeZone: 'Africa/Dar_es_Salaam' }) : '—');
 
-const isReversed = (p: SmsPurchase) => !!p.reversedAt || (p.status || '').toLowerCase() === 'reversed';
-const canReverse = (p: SmsPurchase) => !isReversed(p) && (p.status || '').toLowerCase() === 'completed';
+// Reversal is carried by reversedAt only; status stays `completed`.
+const isReversed = (p: SmsPurchase) => p.reversedAt != null;
+const canReverse = (p: SmsPurchase) => p.reversedAt == null && (p.status || '').toLowerCase() === 'completed';
 
 const StatusBadge: React.FC<{ purchase: SmsPurchase }> = ({ purchase }) => {
     if (isReversed(purchase)) {
@@ -49,7 +61,7 @@ export const SmsPurchasesPage: React.FC = () => {
     const [companyId, setCompanyId] = useState('');
     const [from, setFrom] = useState('');
     const [to, setTo] = useState('');
-    const [status, setStatus] = useState('');
+    const [status, setStatus] = useState<'' | SmsPurchaseStatusFilter>('');
     const [page, setPage] = useState(0);
 
     const [rows, setRows] = useState<SmsPurchase[] | null>(null);
@@ -90,21 +102,17 @@ export const SmsPurchasesPage: React.FC = () => {
                 page,
                 size: PAGE_SIZE,
             });
-            const data: any = res?.data;
+            const data = res?.data;
             if (data && Array.isArray(data.content)) {
                 setRows(data.content);
-                setTotalPages(data.totalPages ?? 1);
+                setTotalPages(data.totalPages ?? 0);
                 setTotalElements(data.totalElements ?? data.content.length);
-            } else if (Array.isArray(data)) {
-                // Tolerate an unpaged list until the backend shape is confirmed.
-                setRows(data);
-                setTotalPages(1);
-                setTotalElements(data.length);
             } else {
                 setRows(null);
                 setError(res?.message || 'The server did not return a purchase list.');
             }
         } catch (e: any) {
+            // 400 = a malformed date, from after to, or an unknown status; the message says which.
             setRows(null);
             setError(e?.message || 'Could not reach the SMS purchases endpoint.');
         } finally {
@@ -131,20 +139,34 @@ export const SmsPurchasesPage: React.FC = () => {
     };
 
     const handleReverse = async () => {
-        if (!reversing || !reason.trim()) return;
+        const trimmed = reason.trim();
+        if (!reversing || !trimmed || trimmed.length > REASON_MAX) return;
         setReverseBusy(true);
         setReverseError('');
         try {
-            await api.smsAdmin.reversePurchase(reversing.paymentId, reason.trim());
-            setNotice(`Purchase ${reversing.paymentId} reversed. ${reversing.credits.toLocaleString('en-US')} credits removed from ${companyName(reversing)}. Refund the money outside the app.`);
+            const res = await api.smsAdmin.reversePurchase(reversing.paymentId, trimmed);
+            const row = res?.data;
+            if (row && row.paymentId === reversing.paymentId) {
+                // 200 returns the reversed row: update it in place, no refetch.
+                setRows(prev => prev ? prev.map(r => (r.paymentId === row.paymentId ? row : r)) : prev);
+            } else {
+                await fetchPurchases();
+            }
+            setNotice(res?.message
+                || `Purchase ${reversing.paymentId} reversed. ${reversing.credits.toLocaleString('en-US')} credits removed from ${companyName(reversing)}. Refund the money outside the app.`);
             setReversing(null);
-            await fetchPurchases();
         } catch (e: any) {
-            // 409 = already reversed by someone else; refresh so the row shows it.
-            setReverseError(e?.status === 409
-                ? 'This purchase has already been reversed.'
-                : (e?.message || 'Failed to reverse the purchase.'));
-            if (e?.status === 409) fetchPurchases();
+            // Server messages are specific; show them as-is.
+            //   409: already reversed, or not completed → the row is stale, refresh the list.
+            //   400: not an SMS credit purchase, or reason missing / over 500 characters.
+            //   404: purchase not found → refresh.   403: not a superadmin.
+            const fallback = e?.status === 409 ? 'This purchase can no longer be reversed (already reversed or not completed).'
+                : e?.status === 404 ? 'This purchase was not found.'
+                : e?.status === 403 ? 'Only a superadmin can reverse a purchase.'
+                : 'Failed to reverse the purchase.';
+            const reasonErr = Array.isArray(e?.errors?.reason) ? e.errors.reason.join(' ') : '';
+            setReverseError(reasonErr || e?.message || fallback);
+            if (e?.status === 409 || e?.status === 404) fetchPurchases();
         } finally {
             setReverseBusy(false);
         }
@@ -189,7 +211,7 @@ export const SmsPurchasesPage: React.FC = () => {
                 </div>
                 <div className="flex flex-col">
                     <label className="text-xs font-bold text-gray-500 mb-1">Status</label>
-                    <select value={status} onChange={e => resetPageAnd(() => setStatus(e.target.value))} className={inputClasses}>
+                    <select value={status} onChange={e => resetPageAnd(() => setStatus(e.target.value as '' | SmsPurchaseStatusFilter))} className={inputClasses}>
                         {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                 </div>
@@ -245,6 +267,7 @@ export const SmsPurchasesPage: React.FC = () => {
                                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                                             {fmtDate(p.paidAt || p.createdAt)}
                                             <div className="text-xs text-gray-400 font-mono">{p.paymentId}</div>
+                                            {p.invoiceNumber && <div className="text-xs text-gray-500 font-mono">{p.invoiceNumber}</div>}
                                         </td>
                                         <td className="px-4 py-3 text-gray-900 font-medium">{companyName(p)}</td>
                                         <td className={`px-4 py-3 text-right ${isReversed(p) ? 'line-through text-gray-400' : 'text-gray-900'}`}>
@@ -324,10 +347,12 @@ export const SmsPurchasesPage: React.FC = () => {
                                     <textarea
                                         value={reason}
                                         onChange={e => setReason(e.target.value)}
+                                        maxLength={REASON_MAX}
                                         rows={3}
                                         className="w-full border border-gray-300 p-2 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                         placeholder="Why is this purchase being reversed?"
                                     />
+                                    <p className="text-xs text-gray-400 text-right">{reason.trim().length}/{REASON_MAX}</p>
                                 </div>
                                 <div className="flex justify-end gap-3">
                                     <button onClick={closeReverse} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 bg-white">
@@ -335,7 +360,7 @@ export const SmsPurchasesPage: React.FC = () => {
                                     </button>
                                     <button
                                         onClick={() => setConfirmStep(true)}
-                                        disabled={!reason.trim()}
+                                        disabled={!reason.trim() || reason.trim().length > REASON_MAX}
                                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
                                     >
                                         Continue
