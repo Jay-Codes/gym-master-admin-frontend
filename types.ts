@@ -266,9 +266,11 @@ export interface KazafitInvoice {
   id: string;
   companyProfileId: number;
   companyName: string;
-  planId: string;
-  planName: string;
-  planCode: string;
+  // Null on SMS credit invoices (and add-on-only invoices): there is no plan.
+  planId: string | null;
+  planName: string | null;
+  planCode: string | null;
+  /** `monthly` / `yearly` / ...; `once` on SMS credit invoices. */
   period: string;
   amountTzs: number;
   status: string;
@@ -277,7 +279,19 @@ export interface KazafitInvoice {
   nextPaymentAt: string;
   paidAt: string | null;
   addons: KazafitAddon[];
+  // S2-T2 / S2-T3 additive fields (backend KazafitInvoiceResponse). Older payloads may omit them.
+  /** `SUBSCRIPTION` or `SMS_CREDITS`. */
+  kind?: KazafitInvoiceKind | string | null;
+  smsCredits?: number | null;
+  unitRateTzs?: number | null;
+  subtotalTzs?: number | null;
+  vatRatePercent?: number | null;
+  vatTzs?: number | null;
+  /** Set when a superadmin reversed the SMS purchase; the invoice is then `void`. */
+  reversedAt?: string | null;
 }
+
+export type KazafitInvoiceKind = 'SUBSCRIPTION' | 'SMS_CREDITS';
 
 export interface PartnerAnalytics {
   partnersCount: number;
@@ -607,6 +621,15 @@ export interface SmsPurchase {
  * `completed` = completed and not reversed; `failed` = failed, voided, expired or cancelled;
  * the rest match exactly. Anything else is a 400.
  */
+/**
+ * Result of `POST /api/superadmin/sms-purchases/{paymentId}/check-with-snippe`.
+ * 200 → `updated`: data is the purchase row after the check (completed + credited if Snippe says paid).
+ * 202 → `still`: Snippe does not report the payment as completed; `snippeStatus` is its status.
+ */
+export type CheckWithSnippeResult =
+  | { kind: 'updated'; purchase: SmsPurchase; message: string | null }
+  | { kind: 'still'; snippeStatus: string | null; message: string | null };
+
 export type SmsPurchaseStatusFilter = 'completed' | 'pending' | 'failed' | 'reversed' | 'voided' | 'expired' | 'cancelled';
 
 export interface SmsPurchaseFilters {

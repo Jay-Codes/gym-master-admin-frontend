@@ -13,7 +13,7 @@ import {
   PortalOtpSettings, PortalOtpSpend,
   PortalAccessRequest, PortalAccessStatus,
   SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
-  SmsPurchase, SmsPurchaseFilters,
+  SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
   CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
@@ -531,6 +531,25 @@ export const api = {
         await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/reverse`, {
           method: 'POST', body: JSON.stringify({ reason })
         })),
+    // Asks Snippe for the real status of a purchase still `pending` (> 10 min old) and, if paid,
+    // fulfils it through the same webhook fulfilment path (credits + invoice). No body.
+    // 200 data = the updated purchase row; 202 data = {snippeStatus} (not paid yet).
+    // request() does not expose the HTTP status of a success, so 200 vs 202 is told apart by shape:
+    // a row carries `paymentId`. Errors throw with err.status: 409 not pending, 404 unknown payment,
+    // 403 not a superadmin, 502 Snippe unreachable.
+    checkWithSnippe: async (paymentId: string): Promise<CheckWithSnippeResult> => {
+      const res = unwrapSuperAdminResponse<any>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/check-with-snippe`, {
+          method: 'POST'
+        }));
+      const data = res?.data;
+      const message = typeof res?.message === 'string' ? res.message : null;
+      if (data && typeof data === 'object' && typeof data.paymentId === 'string') {
+        return { kind: 'updated', purchase: data as SmsPurchase, message };
+      }
+      const snippeStatus = data && typeof data === 'object' && data.snippeStatus != null ? String(data.snippeStatus) : null;
+      return { kind: 'still', snippeStatus, message };
+    },
 
     listSenderIds: async (companyId: number) =>
       unwrapSuperAdminResponse<CompanySenderId[]>(

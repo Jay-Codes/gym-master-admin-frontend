@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Loader2, RefreshCw, RotateCcw, XCircle
+    AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Info, Loader2, RefreshCw, RotateCcw, SearchCheck, XCircle
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Modal } from './Modal';
@@ -19,6 +19,11 @@ import { Company, SMS_PRICING_LIMITS, SmsPurchase, SmsPurchaseStatusFilter } fro
 // currentPage, pageSize, totalElements, totalPages, first, last}; row status is the payment's own
 // lower-case status and a reversed purchase stays `completed` with `reversedAt` set. Reverse
 // returns the reversed row (updated in place); 409 = already reversed / not completed.
+
+// "Check with Snippe" (S2-T6b, user decision 2026-10-11 after R3 F5): a purchase still `pending`
+// more than 10 minutes after it was created may be stranded (webhook lost / unmatched). The action
+// asks the backend to query Snippe for that payment; if Snippe says paid, the backend fulfils it
+// through the same single webhook fulfilment path. There is no background sweep.
 
 // Filter semantics are the server's: `completed` excludes reversed purchases, `reversed` is any
 // purchase reversed at any time, `failed` also covers voided, expired and cancelled.
@@ -40,6 +45,15 @@ const tzs = (n: number | null | undefined) =>
 // Timestamps arrive as ISO-8601 with +03:00; show them in Dar es Salaam time whatever the browser zone.
 const fmtDate = (s: string | null | undefined) =>
     (s ? new Date(s).toLocaleString('en-GB', { timeZone: 'Africa/Dar_es_Salaam' }) : '—');
+
+const CHECK_AFTER_MS = 10 * 60 * 1000;
+
+// Offered only on a pending purchase older than 10 minutes; the server re-checks (409 if not pending).
+const canCheckWithSnippe = (p: SmsPurchase, now: number) => {
+    if (p.reversedAt != null || (p.status || '').toLowerCase() !== 'pending') return false;
+    const created = new Date(p.createdAt).getTime();
+    return Number.isFinite(created) && now - created > CHECK_AFTER_MS;
+};
 
 // Reversal is carried by reversedAt only; status stays `completed`.
 const isReversed = (p: SmsPurchase) => p.reversedAt != null;
@@ -77,6 +91,19 @@ export const SmsPurchasesPage: React.FC = () => {
     const [reverseBusy, setReverseBusy] = useState(false);
     const [reverseError, setReverseError] = useState('');
     const [notice, setNotice] = useState('');
+    const [noticeTone, setNoticeTone] = useState<'success' | 'info'>('success');
+
+    // Check with Snippe: one confirm step, then the call.
+    const [checking, setChecking] = useState<SmsPurchase | null>(null);
+    const [checkBusy, setCheckBusy] = useState(false);
+    const [checkError, setCheckError] = useState('');
+
+    // Re-evaluate the 10-minute threshold while the page stays open.
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const t = window.setInterval(() => setNow(Date.now()), 30_000);
+        return () => window.clearInterval(t);
+    }, []);
 
     // Company names for the filter. A failure here only loses the dropdown, not the list.
     useEffect(() => {
@@ -152,6 +179,7 @@ export const SmsPurchasesPage: React.FC = () => {
             } else {
                 await fetchPurchases();
             }
+            setNoticeTone('success');
             setNotice(res?.message
                 || `Purchase ${reversing.paymentId} reversed. ${reversing.credits.toLocaleString('en-US')} credits removed from ${companyName(reversing)}. Refund the money outside the app.`);
             setReversing(null);
@@ -169,6 +197,54 @@ export const SmsPurchasesPage: React.FC = () => {
             if (e?.status === 409 || e?.status === 404) fetchPurchases();
         } finally {
             setReverseBusy(false);
+        }
+    };
+
+    const openCheck = (p: SmsPurchase) => {
+        setChecking(p);
+        setCheckError('');
+        setNotice('');
+    };
+
+    const closeCheck = () => {
+        if (checkBusy) return;
+        setChecking(null);
+    };
+
+    const handleCheck = async () => {
+        if (!checking) return;
+        setCheckBusy(true);
+        setCheckError('');
+        try {
+            const result = await api.smsAdmin.checkWithSnippe(checking.paymentId);
+            if (result.kind === 'updated') {
+                // 200: the purchase row after the check; update it in place.
+                const row = result.purchase;
+                setRows(prev => prev ? prev.map(r => (r.paymentId === row.paymentId ? row : r)) : prev);
+                const completed = (row.status || '').toLowerCase() === 'completed';
+                setNoticeTone(completed ? 'success' : 'info');
+                setNotice(completed
+                    ? 'Payment confirmed by Snippe — credits added'
+                    : (result.message || `Checked with Snippe. The purchase is now ${row.status || 'unchanged'}.`));
+            } else {
+                // 202: Snippe does not report the payment as paid; nothing changed.
+                setNoticeTone('info');
+                setNotice(`Snippe still reports: ${result.snippeStatus || 'unknown'}`);
+            }
+            setChecking(null);
+        } catch (e: any) {
+            //   409: no longer pending (e.g. the webhook landed meanwhile) → the row is stale, refresh.
+            //   404: purchase not found → refresh.   403: not a superadmin.   502: Snippe unreachable.
+            const statusErr = Array.isArray(e?.errors?.status) ? e.errors.status.join(' ') : '';
+            const fallback = e?.status === 409 ? 'This purchase is no longer pending, so it cannot be checked.'
+                : e?.status === 404 ? 'This purchase was not found.'
+                : e?.status === 403 ? 'Only a superadmin can check a purchase with Snippe.'
+                : e?.status === 502 ? 'Snippe could not be reached. Try again in a few minutes.'
+                : 'Failed to check the purchase with Snippe.';
+            setCheckError(statusErr || e?.message || fallback);
+            if (e?.status === 409 || e?.status === 404) fetchPurchases();
+        } finally {
+            setCheckBusy(false);
         }
     };
 
@@ -225,11 +301,15 @@ export const SmsPurchasesPage: React.FC = () => {
                 )}
             </div>
 
-            {notice && (
+            {notice && (noticeTone === 'success' ? (
                 <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg p-3">
                     <CheckCircle2 size={16} /> {notice}
                 </div>
-            )}
+            ) : (
+                <div className="flex items-center gap-2 text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <Info size={16} /> {notice}
+                </div>
+            ))}
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {loading && !rows ? (
@@ -300,6 +380,15 @@ export const SmsPurchasesPage: React.FC = () => {
                                                     <RotateCcw size={14} /> Reverse
                                                 </button>
                                             )}
+                                            {canCheckWithSnippe(p, now) && (
+                                                <button
+                                                    onClick={() => openCheck(p)}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 whitespace-nowrap"
+                                                    title="Pending for more than 10 minutes"
+                                                >
+                                                    <SearchCheck size={14} /> Check with Snippe
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
@@ -330,6 +419,45 @@ export const SmsPurchasesPage: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            <Modal isOpen={!!checking} onClose={closeCheck} title="Check with Snippe">
+                {checking && (
+                    <div className="space-y-4">
+                        <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-700 space-y-1">
+                            <div><span className="font-bold text-gray-900">{companyName(checking)}</span></div>
+                            <div>{checking.credits.toLocaleString('en-US')} credits &middot; {tzs(checking.totalTzs)} &middot; pending since {fmtDate(checking.createdAt)}</div>
+                            <div className="text-xs text-gray-400 font-mono">{checking.paymentId}</div>
+                        </div>
+                        <p className="text-sm text-gray-700">
+                            This asks Snippe for the payment&rsquo;s real status and, if paid, credits the gym.
+                        </p>
+
+                        {checkError && (
+                            <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
+                                <XCircle size={16} /> {checkError}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={closeCheck}
+                                disabled={checkBusy}
+                                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 bg-white disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCheck}
+                                disabled={checkBusy}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {checkBusy ? <Loader2 className="animate-spin" size={16} /> : <SearchCheck size={16} />}
+                                Check with Snippe
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
 
             <Modal isOpen={!!reversing} onClose={closeReverse} title="Reverse SMS Credit Purchase">
                 {reversing && (
