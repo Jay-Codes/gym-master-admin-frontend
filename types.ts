@@ -643,24 +643,35 @@ export interface SmsPurchaseFilters {
 
 export type SenderIdStatus = 'ACTIVE' | 'DISABLED';
 
-/** An approved sender ID. Registration with Beem/TCRA happens offline (D1). */
+/**
+ * An approved sender ID, as `GET /api/superadmin/companies/{companyId}/sender-ids` returns it
+ * (S3-T1 `SenderIdResponse`). Registration with Beem/TCRA happens offline (D1).
+ * `createdBy` is the superadmin's email; timestamps are `LocalDateTime` (no offset).
+ */
 export interface CompanySenderId {
   id: number;
+  companyId: number;
   senderName: string;
   status: SenderIdStatus;
   isDefault: boolean;
   notes: string | null;
-  createdBy?: string | null;
-  createdAt?: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
+/**
+ * `senderName` must match `^[A-Za-z0-9]{1,11}$` after trim and must not be "Growsoft" (any case).
+ * `status` defaults to ACTIVE, `isDefault` to false; default + DISABLED is refused (400). notes ≤ 500.
+ */
 export interface CreateSenderIdRequest {
   senderName: string;
-  status: SenderIdStatus;
-  isDefault: boolean;
-  notes: string | null;
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
 }
 
+/** Partial: absent/null = unchanged; blank `notes` clears them. */
 export interface UpdateSenderIdRequest {
   status?: SenderIdStatus;
   isDefault?: boolean;

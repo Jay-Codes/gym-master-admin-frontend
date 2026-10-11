@@ -228,21 +228,33 @@ export const SmsPurchasesPage: React.FC = () => {
                     : (result.message || `Checked with Snippe. The purchase is now ${row.status || 'unchanged'}.`));
             } else {
                 // 202: Snippe does not report the payment as paid; nothing changed.
+                // snippeStatus: "pending", "not_found" (Snippe has no such payment) or a raw status.
                 setNoticeTone('info');
-                setNotice(`Snippe still reports: ${result.snippeStatus || 'unknown'}`);
+                const st = (result.snippeStatus || '').toLowerCase();
+                setNotice(st === 'pending'
+                    ? 'Snippe still reports this payment as pending. Nothing was changed; check again later.'
+                    : st === 'not_found'
+                    ? 'Snippe has no record of this payment, so the gym was probably never charged. Nothing was changed.'
+                    : `Snippe reports this payment as "${result.snippeStatus || 'unknown'}". Nothing was changed.`);
             }
             setChecking(null);
         } catch (e: any) {
-            //   409: no longer pending (e.g. the webhook landed meanwhile) → the row is stale, refresh.
+            // As shipped (S2-T3b):
+            //   409 + errors.status: no longer pending (e.g. the webhook landed meanwhile) → stale row, refresh.
+            //   409 + errors.amount: Snippe says paid but the amount/currency does not match → nothing credited.
+            //   409, message only: younger than 10 minutes → Snippe was not called; nothing to refresh.
             //   404: purchase not found → refresh.   403: not a superadmin.   502: Snippe unreachable.
             const statusErr = Array.isArray(e?.errors?.status) ? e.errors.status.join(' ') : '';
-            const fallback = e?.status === 409 ? 'This purchase is no longer pending, so it cannot be checked.'
+            const amountErr = Array.isArray(e?.errors?.amount) ? e.errors.amount.join(' ') : '';
+            const fallback = e?.status === 409 ? 'This purchase cannot be checked right now.'
                 : e?.status === 404 ? 'This purchase was not found.'
                 : e?.status === 403 ? 'Only a superadmin can check a purchase with Snippe.'
-                : e?.status === 502 ? 'Snippe could not be reached. Try again in a few minutes.'
+                : e?.status === 502 ? 'Snippe could not be reached. Nothing was changed. Try again in a few minutes.'
                 : 'Failed to check the purchase with Snippe.';
-            setCheckError(statusErr || e?.message || fallback);
-            if (e?.status === 409 || e?.status === 404) fetchPurchases();
+            setCheckError(amountErr
+                ? `${amountErr} No credits were added. Compare the payment in the Snippe dashboard before doing anything else.`
+                : (statusErr || e?.message || fallback));
+            if (statusErr || e?.status === 404) fetchPurchases();
         } finally {
             setCheckBusy(false);
         }

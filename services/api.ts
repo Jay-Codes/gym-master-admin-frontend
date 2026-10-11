@@ -486,8 +486,8 @@ export const api = {
   // SMS credits: platform pricing, per-gym override, purchases/reversal, sender IDs (S2-T6).
   // Pricing, override and purchases are aligned with the shipped backend (S2-T1 / S2-T3, see
   // run/S2-T6a.md): flat `Response` envelope, list `data` is a `PagedResponse`. A 400 carries
-  // `err.errors` ({field: [message]}) for inline field errors. Sender IDs (S3-T1) are not built yet
-  // and still follow the plan § 10 assumption.
+  // `err.errors` ({field: [message]}) for inline field errors. Sender IDs follow S3-T1 as shipped
+  // (run/S2-T6c.md).
   smsAdmin: {
     getPricing: async () =>
       unwrapSuperAdminResponse<SmsPricingSettings>(
@@ -551,14 +551,25 @@ export const api = {
       return { kind: 'still', snippeStatus, message };
     },
 
-    listSenderIds: async (companyId: number) =>
-      unwrapSuperAdminResponse<CompanySenderId[]>(
-        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, { method: 'GET' })),
+    // Flat `Response` whose `data` is the array itself (both statuses, id order). Not passed through
+    // unwrapSuperAdminResponse: that helper would take a non-empty data array for the old
+    // ResponseWrapper and return the first sender row instead of the response. 404 unknown gym.
+    listSenderIds: async (companyId: number): Promise<ApiResponse<CompanySenderId[]>> => {
+      const res = await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, { method: 'GET' });
+      const first = Array.isArray(res?.data) ? res.data[0] : undefined;
+      const isWrapper = first && typeof first === 'object' && 'success' in first && !('senderName' in first);
+      return (isWrapper ? first : res) as ApiResponse<CompanySenderId[]>;
+    },
+    // 201 data = the new row. 400 errors.senderName|status|isDefault|notes; 409 errors.senderName
+    // (duplicate in this gym, ignoring case); 404 unknown gym.
     createSenderId: async (companyId: number, data: CreateSenderIdRequest) =>
       unwrapSuperAdminResponse<CompanySenderId>(
         await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, {
           method: 'POST', body: JSON.stringify(data)
         })),
+    // Partial {status?, isDefault?, notes?}. 200 data = the row. Setting a default clears the previous
+    // one; disabling the default clears it (gym falls back to Growsoft) — callers re-read the list.
+    // 400 errors.isDefault when making a DISABLED sender default; 404 sender not in this gym.
     updateSenderId: async (companyId: number, senderId: number, data: UpdateSenderIdRequest) =>
       unwrapSuperAdminResponse<CompanySenderId>(
         await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
