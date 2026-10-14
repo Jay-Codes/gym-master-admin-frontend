@@ -314,6 +314,7 @@ export interface Partner {
   commissionType: 'flat' | 'percent';
   totalReferrals: number;
   totalCommissionTzs: number;
+  /** pending | approved | rejected (V17 CHECK, lower case) */
   kycStatus: string;
   userId: number;
   payoutSchedule: string;
@@ -347,6 +348,8 @@ export interface CommissionOverrideRequest {
   type: 'flat' | 'percent';
   schedule: string;
 }
+
+export type KycDecision = 'approved' | 'rejected';
 
 export interface PartnerConfig {
   defaultCommissionRate: number;

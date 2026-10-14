@@ -23,6 +23,8 @@ import { SmsPurchasesPage } from './components/SmsPurchasesPage';
 import { csvCell, invoicePlanLabel } from './components/invoiceFormat';
 import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
 import { CompanySenderIds } from './components/CompanySenderIds';
+import { PartnerKycAction } from './components/PartnerKycPanel';
+import { payoutScheduleOptions } from './components/payoutSchedule';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
@@ -2360,6 +2362,7 @@ const PartnersPage = () => {
                 ]}
                 actions={(p: Partner) => (
                     <div className="flex items-center justify-end gap-2">
+                        <PartnerKycAction partner={p} onUpdated={u => setPartners(prev => prev.map(x => x.id === u.id ? u : x))} />
                         <button
                             onClick={() => fetchHistory(p)}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
@@ -2430,14 +2433,14 @@ const PartnersPage = () => {
 
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Payment Schedule</label>
-                            <input
-                                type="text"
+                            <select
                                 required
-                                placeholder="e.g. Monthly, Quarterly, Weekly"
                                 className={inputClasses}
                                 value={formData.schedule}
                                 onChange={e => setFormData({ ...formData, schedule: e.target.value })}
-                            />
+                            >
+                                {payoutScheduleOptions(formData.schedule).map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
                         </div>
 
                         <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
@@ -2511,10 +2514,7 @@ const PartnersPage = () => {
                             value={configFormData.defaultPayoutSchedule}
                             onChange={e => setConfigFormData({ ...configFormData, defaultPayoutSchedule: e.target.value })}
                         >
-                            <option value="Weekly">Weekly</option>
-                            <option value="Monthly">Monthly</option>
-                            <option value="Quarterly">Quarterly</option>
-                            <option value="On Demand">On Demand</option>
+                            {payoutScheduleOptions(configFormData.defaultPayoutSchedule).map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                     </div>
 

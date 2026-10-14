@@ -5,7 +5,7 @@ import {
   SmsBalanceData, UpdateSmsBalanceRequest,
   BillingPlan, BillingAddon, PaymentInitiateRequest, PaymentHistory,
   CreatePlanRequest, KazafitInvoice, PartnerAnalytics, Partner, CommissionOverrideRequest,
-  PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod,
+  PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod, KycDecision,
   OnboardingStep, OnboardingData, OnboardingResponse,
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit,
@@ -271,6 +271,17 @@ export const api = {
         return request<Partner>(`/api/superadmin/partners/${id}/commission${query}`, {
           method: 'PUT'
         });
+      },
+      // KZ-47: superadmin KYC decision. Accepts the wrapped (`{data:[Response]}`) or flat
+      // `Response` envelope and returns the updated partner.
+      updateKyc: async (id: string, status: KycDecision): Promise<Partner> => {
+        const response = await request<any>(`/api/superadmin/partners/${encodeURIComponent(id)}/kyc`, {
+          method: 'PUT',
+          body: JSON.stringify({ status })
+        });
+        const inner: any = Array.isArray(response?.data) ? response.data[0] : response;
+        if (inner && inner.success === false) throw new Error(inner.message || 'Failed to update KYC status');
+        return (inner?.data ?? {}) as Partner;
       },
       getPaymentMethods: async (id: string) => {
         const response = await request<any>(`/api/superadmin/partners/${id}/payment-methods`, { method: 'GET' });
