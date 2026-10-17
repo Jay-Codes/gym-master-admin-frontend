@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
     Check, Shield, Star, Rocket, Info,
     CreditCard, Smartphone, History, Loader2,
-    Calendar, CheckCircle2, ChevronRight, AlertCircle, Settings, Clock
+    Calendar, CheckCircle2, ChevronRight, AlertCircle, Settings, Clock, Receipt
 } from 'lucide-react';
 import { Modal } from './Modal';
+import { RecordPaymentForm } from './RecordPaymentForm';
+import { CompanyInvoicesTable } from './CompanyInvoicesTable';
 import { api } from '../services/api';
 import { Company, BillingPlan, BillingAddon, PaymentHistory, PlanAudit } from '../types';
 
@@ -32,7 +34,8 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, com
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [initiating, setInitiating] = useState(false);
-    const [activeTab, setActiveTab] = useState<'plans' | 'history' | 'override' | 'audits'>('plans');
+    const [activeTab, setActiveTab] = useState<'plans' | 'record' | 'history' | 'override' | 'audits'>('plans');
+    const [invoicesReloadKey, setInvoicesReloadKey] = useState(0);
 
     // Selection state
     const [selectedPlanId, setSelectedPlanId] = useState<string>('');
@@ -316,8 +319,23 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, com
                         </div>
                     </div>
                 );
+            case 'record':
+                return (
+                    <RecordPaymentForm
+                        company={company}
+                        plans={plans}
+                        currentPlanId={currentPlan?.id}
+                        onRecorded={() => { setInvoicesReloadKey(k => k + 1); loadData(); }}
+                    />
+                );
             case 'history':
                 return (
+                    <div className="space-y-6">
+                    <div>
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Platform invoices</h3>
+                        <CompanyInvoicesTable companyId={company.id} reloadKey={invoicesReloadKey} onExpiryAffected={() => setActiveTab('override')} />
+                    </div>
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">In-app payment attempts (Snippe)</h3>
                     <div className="overflow-x-auto rounded-2xl border border-gray-200">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 border-b border-gray-200">
@@ -343,6 +361,7 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, com
                                 )}
                             </tbody>
                         </table>
+                    </div>
                     </div>
                 );
             case 'override':
@@ -416,8 +435,9 @@ export const BillingModal: React.FC<BillingModalProps> = ({ isOpen, onClose, com
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Billing & Subscriptions — ${company.companyName}`} size="xl">
-            <div className="flex border-b border-gray-200 -mt-2 mb-6">
+            <div className="flex border-b border-gray-200 -mt-2 mb-6 overflow-x-auto">
                 <button onClick={() => setActiveTab('plans')} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'plans' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Calendar size={16} /> Plans & Addons</button>
+                <button onClick={() => setActiveTab('record')} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'record' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Receipt size={16} /> Record Payment</button>
                 <button onClick={() => setActiveTab('history')} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><History size={16} /> Payment History</button>
                 <button onClick={() => setActiveTab('override')} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'override' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Settings size={16} /> Manual Override</button>
                 <button onClick={() => setActiveTab('audits')} className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'audits' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}><Clock size={16} /> Override History</button>

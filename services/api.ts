@@ -14,7 +14,11 @@ import {
   PortalAccessRequest, PortalAccessStatus,
   SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
   SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
-  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
+  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
+  PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
+  NotificationPrefs, UpdateNotificationPrefsRequest,
+  PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult,
+  PlanUpcomingResult, PlanLogRow, PlanLogFilters, PlanSmsStats, PlanExpiryStats
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -187,8 +191,9 @@ export const api = {
 
     // Invoice Management
     invoices: {
-      list: async (page = 0, size = 20) => {
-        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}`, { method: 'GET' });
+      list: async (page = 0, size = 20, companyId?: number) => {
+        const companyQuery = companyId != null ? `&companyId=${companyId}` : '';
+        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}${companyQuery}`, { method: 'GET' });
         // The API returns a wrapped response for superadmin: { data: [ { success: true, ..., data: { content: [...] } } ] }
         if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           return response.data[0] as ApiResponse<PageableResponse<KazafitInvoice>>;
@@ -608,6 +613,68 @@ export const api = {
       })
   },
 
+  // Plan notifications wave F2 — platform settings and the 10 SMS templates. Flat `Response` envelope.
+  planNotifications: {
+    getSettings: () =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'GET' }),
+    updateSettings: (body: Partial<PlanNotificationSettings>) =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'PUT', body: JSON.stringify(body) }),
+    templates: () =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates', { method: 'GET' }),
+    updateTemplate: (stage: string, lang: string, body: string) =>
+      request<PlanNotificationTemplate>(`/api/superadmin/plan-notifications/templates/${stage}/${lang}`, {
+        method: 'PUT', body: JSON.stringify({ body }),
+      }),
+    resetTemplates: (stage?: string, language?: string) =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates/reset', {
+        method: 'POST', body: JSON.stringify({ stage, language }),
+      }),
+    preview: (body: { stage: string; language: string; body?: string; companyId?: number }) =>
+      request<PlanNotificationPreview>('/api/superadmin/plan-notifications/preview', { method: 'POST', body: JSON.stringify(body) }),
+    testSend: (body: { phone: string; stage: string; language: string }) =>
+      request<PlanNotificationTestSendResult>('/api/superadmin/plan-notifications/test-send', { method: 'POST', body: JSON.stringify(body) }),
+    upcoming: (days = 14) =>
+      request<PlanUpcomingResult>(`/api/superadmin/plan-notifications/upcoming?days=${days}`, { method: 'GET' }),
+    log: (f: PlanLogFilters) => {
+      const q = new URLSearchParams();
+      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, String(v)); });
+      return request<PagedResponse<PlanLogRow>>(`/api/superadmin/plan-notifications/log?${q.toString()}`, { method: 'GET' });
+    },
+    smsStats: (from: string, to: string) =>
+      request<PlanSmsStats>(`/api/superadmin/plan-notifications/stats/sms?from=${from}&to=${to}`, { method: 'GET' }),
+    expiryStats: (from: string, to: string) =>
+      request<PlanExpiryStats>(`/api/superadmin/plan-notifications/stats/expiry?from=${from}&to=${to}`, { method: 'GET' }),
+  },
+  // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
+  notificationPrefs: {
+    get: (companyId: number) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, { method: 'GET' }),
+    update: (companyId: number, body: UpdateNotificationPrefsRequest) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+  },
+  // Plan notifications wave F1 — offline platform payments (run/CONTRACT.md). Flat `Response` envelope.
+  platformPayments: {
+    preview: (companyId: number, params: { planId?: string; period?: string; months?: number }) => {
+      const q = new URLSearchParams();
+      if (params.planId) q.set('planId', params.planId);
+      if (params.period) q.set('period', params.period);
+      if (params.months != null) q.set('months', String(params.months));
+      return request<PlatformPaymentPreview>(`/api/superadmin/companies/${companyId}/payments/preview?${q.toString()}`, { method: 'GET' });
+    },
+    record: (companyId: number, body: RecordPlatformPaymentRequest) =>
+      request<PlatformPaymentResult>(`/api/superadmin/companies/${companyId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    voidInvoice: (invoiceId: string, reason: string) =>
+      request<PlatformPaymentResult>(`/api/superadmin/billing/invoices/${invoiceId}/void`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
+  },
   billing: {
     // Public endpoints — no auth required, respond with a plain array
     getPlans: () =>

@@ -19,10 +19,12 @@ import {
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { SmsPricingPage } from './components/SmsPricingPage';
+import { PlanNotificationsPage } from './components/PlanNotificationsPage';
 import { SmsPurchasesPage } from './components/SmsPurchasesPage';
-import { csvCell, invoicePlanLabel } from './components/invoiceFormat';
+import { csvCell, invoicePeriodLabel, invoicePlanLabel, invoiceSourceLabel, paymentMethodLabel } from './components/invoiceFormat';
 import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
 import { CompanySenderIds } from './components/CompanySenderIds';
+import { CompanyNotificationPrefs } from './components/CompanyNotificationPrefs';
 import { PartnerKycAction } from './components/PartnerKycPanel';
 import { payoutScheduleOptions } from './components/payoutSchedule';
 import {
@@ -1060,6 +1062,7 @@ const CompaniesPage = () => {
 
                         <CompanySmsPricingOverride key={`rate-${viewingCompany.id}`} companyId={viewingCompany.id} />
                         <CompanySenderIds key={`senders-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanyNotificationPrefs key={`notify-${viewingCompany.id}`} companyId={viewingCompany.id} />
                     </div>
                 )}
             </Modal>
@@ -1967,7 +1970,8 @@ const InvoicesPage = () => {
 
         // Existing columns first and unchanged in order; kind/SMS/VAT columns appended (S2-T6b, R3 F8).
         const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At",
-            "Kind", "SMS Credits", "Unit Rate (TZS)", "Subtotal (TZS)", "VAT %", "VAT (TZS)", "Reversed At"];
+            "Kind", "SMS Credits", "Unit Rate (TZS)", "Subtotal (TZS)", "VAT %", "VAT (TZS)", "Reversed At",
+            "Source", "Payment Method", "Payment Reference", "Period Start", "Period End"];
         const csvContent = [
             headers.join(","),
             ...invoices.map(inv => [
@@ -1987,6 +1991,11 @@ const InvoicesPage = () => {
                 csvCell(inv.vatRatePercent),
                 csvCell(inv.vatTzs),
                 csvCell(inv.reversedAt),
+                csvCell(inv.source),
+                csvCell(inv.paymentMethod),
+                csvCell(inv.paymentReference),
+                csvCell(inv.periodStartAt),
+                csvCell(inv.periodEndAt),
             ].join(","))
         ].join("\n");
 
@@ -2035,6 +2044,14 @@ const InvoicesPage = () => {
                             <div>
                                 <div className="text-sm">{invoicePlanLabel(inv)}</div>
                                 <div className="text-xs text-gray-400 capitalize">{inv.period}</div>
+                                {inv.periodStartAt && <div className="text-[11px] text-gray-500">{invoicePeriodLabel(inv)}</div>}
+                                {inv.source && inv.source !== 'SNIPPE' && (
+                                    <div className="text-[11px] text-gray-500">
+                                        {invoiceSourceLabel(inv.source)}
+                                        {inv.paymentMethod && ` · ${paymentMethodLabel(inv.paymentMethod)}`}
+                                        {inv.paymentReference && <span className="font-mono"> {inv.paymentReference}</span>}
+                                    </div>
+                                )}
                             </div>
                         )
                     },
@@ -4368,6 +4385,7 @@ const DashboardLayout = () => {
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
                 <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/plan-notifications" element={<PlanNotificationsPage />} />
                 <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>

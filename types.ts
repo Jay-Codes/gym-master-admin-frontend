@@ -289,9 +289,74 @@ export interface KazafitInvoice {
   vatTzs?: number | null;
   /** Set when a superadmin reversed the SMS purchase; the invoice is then `void`. */
   reversedAt?: string | null;
+  // Plan notifications wave BE-3 (V110). Null on rows that predate period tracking.
+  periodStartAt?: string | null;
+  periodEndAt?: string | null;
+  source?: InvoiceSource | null;
+  paymentMethod?: PaymentMethod | null;
+  paymentReference?: string | null;
 }
 
 export type KazafitInvoiceKind = 'SUBSCRIPTION' | 'SMS_CREDITS';
+
+// ── Plan notifications wave — F1 offline platform payments (run/CONTRACT.md) ──
+
+export type InvoiceSource = 'SNIPPE' | 'SUPERADMIN' | 'OFFLINE' | 'BACKFILL';
+export type PaymentMethod =
+  'MPESA' | 'TIGO_PESA' | 'AIRTEL_MONEY' | 'HALOPESA' | 'BANK_TRANSFER' | 'CASH' | 'OTHER';
+export type PlatformPaymentMode = 'NEW' | 'BACKFILL';
+export type PlatformPaymentPeriod = 'monthly' | 'annually' | 'custom';
+
+export interface PlatformPaymentPreview {
+  companyId: number;
+  companyName: string;
+  status: string;
+  currentPlanId: string | null;
+  currentPlanName: string | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  graceDays: number;
+  planId: string | null;
+  planName: string | null;
+  period: PlatformPaymentPeriod;
+  months: number;
+  /** yyyy-MM-dd (EAT day) */
+  startDate: string;
+  endDate: string;
+  expiryDate: string;
+  amountTzs: number;
+}
+
+export interface RecordPlatformPaymentRequest {
+  mode: PlatformPaymentMode;
+  planId: string;
+  period: PlatformPaymentPeriod;
+  months?: number;
+  amountTzs: number;
+  paymentMethod: PaymentMethod;
+  paymentReference?: string;
+  paidAt: string;
+  startDate: string;
+  endDate: string;
+  expiryDate?: string;
+  notes?: string;
+  sendReceipt?: boolean;
+  force?: boolean;
+}
+
+export interface PlatformPaymentResult {
+  invoice: KazafitInvoice;
+  notes: string | null;
+  warnings: string[];
+  statusBefore: string | null;
+  statusAfter: string | null;
+  planEndsAtBefore: string | null;
+  planEndsAtAfter: string | null;
+  expiresAtBefore: string | null;
+  expiresAtAfter: string | null;
+  receiptQueued: boolean;
+  expiryAffected: boolean;
+}
 
 export interface PartnerAnalytics {
   partnersCount: number;
@@ -679,4 +744,164 @@ export interface UpdateSenderIdRequest {
   status?: SenderIdStatus;
   isDefault?: boolean;
   notes?: string | null;
+}
+
+// ── Plan notifications wave — F3 company notification preferences (run/CONTRACT.md) ──
+
+export interface NotificationPrefs {
+  planSmsEnabled: boolean;
+  planEmailEnabled: boolean;
+  /** Digits-only MSISDN, e.g. 255712345678. */
+  planPhone: string | null;
+  planEmail: string | null;
+  emailLive: boolean;
+  defaultPhones: string[];
+  effectivePhones: string[];
+  saved: boolean;
+  updatedAt: string | null;
+}
+
+export interface UpdateNotificationPrefsRequest {
+  planSmsEnabled?: boolean;
+  planEmailEnabled?: boolean;
+  planPhone?: string;
+  planEmail?: string;
+}
+
+// ── Plan notifications wave — F2 settings and templates (run/CONTRACT.md) ──
+
+export type PlanNotificationStage = 'BEFORE_END' | 'END_DAY' | 'GRACE' | 'LOCKED' | 'RECEIPT';
+export type PlanLanguage = 'EN' | 'SW';
+export type PlanLanguageMode = 'COMPANY' | 'EN' | 'SW';
+
+export interface PlanNotificationSettings {
+  remindersEnabled: boolean;
+  receiptsEnabled: boolean;
+  defaultGraceDays: number;
+  beforeEndOffsets: number[];
+  onEndDay: boolean;
+  graceOffsets: number[];
+  afterLockOffsets: number[];
+  sendHour: number;
+  languageMode: PlanLanguageMode;
+  includeTrial: boolean;
+  maxSendsPerRun: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationTemplate {
+  stage: PlanNotificationStage;
+  language: PlanLanguage;
+  body: string;
+  isDefault: boolean;
+  placeholders: string[];
+  sample: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationPreview {
+  text: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  errors: string[];
+  placeholders: string[];
+}
+
+export interface PlanNotificationTestSendResult {
+  phone: string;
+  text: string;
+  segments: number;
+  accepted: boolean;
+  providerMessage: string | null;
+  remainingThisHour: number;
+}
+
+export interface PlanUpcomingRow {
+  date: string;
+  companyId: number;
+  companyName: string;
+  stage: PlanNotificationStage;
+  offsetDays: number;
+  language: PlanLanguage;
+  phones: string[];
+  skipReason: 'NO_PHONE' | 'OPT_OUT' | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  alreadySent: boolean;
+}
+
+export interface PlanUpcomingResult {
+  remindersEnabled: boolean;
+  sendHour: number;
+  days: number;
+  smsCount: number;
+  gymCount: number;
+  rows: PlanUpcomingRow[];
+}
+
+export type PlanLogStatus = 'CLAIMED' | 'SENT' | 'FAILED' | 'SKIPPED_NO_PHONE' | 'SKIPPED_OPT_OUT';
+
+export interface PlanLogRow {
+  id: number;
+  createdAt: string;
+  sentAt: string | null;
+  companyId: number;
+  companyName: string | null;
+  kind: 'REMINDER' | 'RECEIPT';
+  stage: PlanNotificationStage;
+  offsetDays: number | null;
+  phone: string | null;
+  language: PlanLanguage;
+  status: PlanLogStatus;
+  error: string | null;
+  segments: number;
+  costTzs: number;
+  body: string;
+  invoiceId: string | null;
+}
+
+export interface PlanLogFilters {
+  companyId?: number;
+  kind?: string;
+  stage?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+// ── Plan notifications wave — F4 stats (run/CONTRACT.md) ──
+
+export interface PlanSmsBreakdown { key: string; sent: number; failed: number; segments: number; costTzs: number }
+
+export interface PlanSmsStats {
+  from: string;
+  to: string;
+  totals: { sent: number; failed: number; inFlight: number; skippedNoPhone: number; skippedOptOut: number; segments: number; costTzs: number };
+  byStage: PlanSmsBreakdown[];
+  byLanguage: PlanSmsBreakdown[];
+  perDay: { date: string; stage: PlanNotificationStage; sent: number; failed: number }[];
+  topErrors: { error: string; count: number }[];
+  missingPhone: { companyId: number; companyName: string; skips: number; lastSkippedAt: string }[];
+}
+
+export interface PlanPaymentBucket { key: string; count: number; amountTzs: number }
+
+export interface PlanExpiryStats {
+  from: string;
+  to: string;
+  now: { active: number; endingIn7: number; endingIn14: number; endingIn30: number; inGrace: number; locked: number;
+         onTrial: number; trialsEndingIn7: number; noPlan: number };
+  funnel: { ended: number; renewedBeforeLock: number; renewedAfterLock: number; notRenewed: number };
+  afterReminder: { companiesReminded: number; renewedWithin7Days: number; rate: number;
+                   byLastStage: { stage: PlanNotificationStage; companies: number }[] };
+  paymentsBySource: PlanPaymentBucket[];
+  paymentsByMethod: PlanPaymentBucket[];
 }

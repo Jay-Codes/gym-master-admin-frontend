@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, LayoutDashboard, Users, Building2, ShieldCheck, Menu, CreditCard, FileText, Handshake, DollarSign, Wrench, MessageSquare, Tag, Receipt } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, Building2, ShieldCheck, Menu, CreditCard, FileText, Handshake, DollarSign, Wrench, MessageSquare, Tag, Receipt, BellRing } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,6 +25,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onNavigate,
     { id: 'sms-spend', label: 'SMS Spend', icon: MessageSquare },
     { id: 'sms-pricing', label: 'SMS Pricing', icon: Tag },
     { id: 'sms-purchases', label: 'SMS Purchases', icon: Receipt },
+    { id: 'plan-notifications', label: 'Plan Notifications', icon: BellRing },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench },
   ];
 
