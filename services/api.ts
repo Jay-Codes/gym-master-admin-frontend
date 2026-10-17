@@ -16,7 +16,8 @@ import {
   SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
   CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
   PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
-  NotificationPrefs, UpdateNotificationPrefsRequest
+  NotificationPrefs, UpdateNotificationPrefsRequest,
+  PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -611,6 +612,27 @@ export const api = {
       })
   },
 
+  // Plan notifications wave F2 — platform settings and the 10 SMS templates. Flat `Response` envelope.
+  planNotifications: {
+    getSettings: () =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'GET' }),
+    updateSettings: (body: Partial<PlanNotificationSettings>) =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'PUT', body: JSON.stringify(body) }),
+    templates: () =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates', { method: 'GET' }),
+    updateTemplate: (stage: string, lang: string, body: string) =>
+      request<PlanNotificationTemplate>(`/api/superadmin/plan-notifications/templates/${stage}/${lang}`, {
+        method: 'PUT', body: JSON.stringify({ body }),
+      }),
+    resetTemplates: (stage?: string, language?: string) =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates/reset', {
+        method: 'POST', body: JSON.stringify({ stage, language }),
+      }),
+    preview: (body: { stage: string; language: string; body?: string; companyId?: number }) =>
+      request<PlanNotificationPreview>('/api/superadmin/plan-notifications/preview', { method: 'POST', body: JSON.stringify(body) }),
+    testSend: (body: { phone: string; stage: string; language: string }) =>
+      request<PlanNotificationTestSendResult>('/api/superadmin/plan-notifications/test-send', { method: 'POST', body: JSON.stringify(body) }),
+  },
   // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
   notificationPrefs: {
     get: (companyId: number) =>

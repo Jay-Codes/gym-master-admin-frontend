@@ -767,3 +767,57 @@ export interface UpdateNotificationPrefsRequest {
   planPhone?: string;
   planEmail?: string;
 }
+
+// ── Plan notifications wave — F2 settings and templates (run/CONTRACT.md) ──
+
+export type PlanNotificationStage = 'BEFORE_END' | 'END_DAY' | 'GRACE' | 'LOCKED' | 'RECEIPT';
+export type PlanLanguage = 'EN' | 'SW';
+export type PlanLanguageMode = 'COMPANY' | 'EN' | 'SW';
+
+export interface PlanNotificationSettings {
+  remindersEnabled: boolean;
+  receiptsEnabled: boolean;
+  defaultGraceDays: number;
+  beforeEndOffsets: number[];
+  onEndDay: boolean;
+  graceOffsets: number[];
+  afterLockOffsets: number[];
+  sendHour: number;
+  languageMode: PlanLanguageMode;
+  includeTrial: boolean;
+  maxSendsPerRun: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationTemplate {
+  stage: PlanNotificationStage;
+  language: PlanLanguage;
+  body: string;
+  isDefault: boolean;
+  placeholders: string[];
+  sample: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationPreview {
+  text: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  errors: string[];
+  placeholders: string[];
+}
+
+export interface PlanNotificationTestSendResult {
+  phone: string;
+  text: string;
+  segments: number;
+  accepted: boolean;
+  providerMessage: string | null;
+  remainingThisHour: number;
+}

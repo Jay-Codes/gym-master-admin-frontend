@@ -19,6 +19,7 @@ import {
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { SmsPricingPage } from './components/SmsPricingPage';
+import { PlanNotificationsPage } from './components/PlanNotificationsPage';
 import { SmsPurchasesPage } from './components/SmsPurchasesPage';
 import { csvCell, invoicePeriodLabel, invoicePlanLabel, invoiceSourceLabel, paymentMethodLabel } from './components/invoiceFormat';
 import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
@@ -4384,6 +4385,7 @@ const DashboardLayout = () => {
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
                 <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/plan-notifications" element={<PlanNotificationsPage />} />
                 <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
