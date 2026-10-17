@@ -591,6 +591,14 @@ export const api = {
         await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
           method: 'PATCH', body: JSON.stringify(data)
         })),
+    // DELETE removes the row for good. 200 data = the removed row. Deleting the default clears the default (the gym
+    // falls back to Growsoft); a campaign still waiting to send with it goes out from the default instead.
+    // 404 sender not in this gym (already gone).
+    deleteSenderId: async (companyId: number, senderId: number) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
+          method: 'DELETE'
+        })),
   },
 
   backfill: {
