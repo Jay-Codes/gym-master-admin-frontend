@@ -289,9 +289,74 @@ export interface KazafitInvoice {
   vatTzs?: number | null;
   /** Set when a superadmin reversed the SMS purchase; the invoice is then `void`. */
   reversedAt?: string | null;
+  // Plan notifications wave BE-3 (V110). Null on rows that predate period tracking.
+  periodStartAt?: string | null;
+  periodEndAt?: string | null;
+  source?: InvoiceSource | null;
+  paymentMethod?: PaymentMethod | null;
+  paymentReference?: string | null;
 }
 
 export type KazafitInvoiceKind = 'SUBSCRIPTION' | 'SMS_CREDITS';
+
+// ── Plan notifications wave — F1 offline platform payments (run/CONTRACT.md) ──
+
+export type InvoiceSource = 'SNIPPE' | 'SUPERADMIN' | 'OFFLINE' | 'BACKFILL';
+export type PaymentMethod =
+  'MPESA' | 'TIGO_PESA' | 'AIRTEL_MONEY' | 'HALOPESA' | 'BANK_TRANSFER' | 'CASH' | 'OTHER';
+export type PlatformPaymentMode = 'NEW' | 'BACKFILL';
+export type PlatformPaymentPeriod = 'monthly' | 'annually' | 'custom';
+
+export interface PlatformPaymentPreview {
+  companyId: number;
+  companyName: string;
+  status: string;
+  currentPlanId: string | null;
+  currentPlanName: string | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  graceDays: number;
+  planId: string | null;
+  planName: string | null;
+  period: PlatformPaymentPeriod;
+  months: number;
+  /** yyyy-MM-dd (EAT day) */
+  startDate: string;
+  endDate: string;
+  expiryDate: string;
+  amountTzs: number;
+}
+
+export interface RecordPlatformPaymentRequest {
+  mode: PlatformPaymentMode;
+  planId: string;
+  period: PlatformPaymentPeriod;
+  months?: number;
+  amountTzs: number;
+  paymentMethod: PaymentMethod;
+  paymentReference?: string;
+  paidAt: string;
+  startDate: string;
+  endDate: string;
+  expiryDate?: string;
+  notes?: string;
+  sendReceipt?: boolean;
+  force?: boolean;
+}
+
+export interface PlatformPaymentResult {
+  invoice: KazafitInvoice;
+  notes: string | null;
+  warnings: string[];
+  statusBefore: string | null;
+  statusAfter: string | null;
+  planEndsAtBefore: string | null;
+  planEndsAtAfter: string | null;
+  expiresAtBefore: string | null;
+  expiresAtAfter: string | null;
+  receiptQueued: boolean;
+  expiryAffected: boolean;
+}
 
 export interface PartnerAnalytics {
   partnersCount: number;

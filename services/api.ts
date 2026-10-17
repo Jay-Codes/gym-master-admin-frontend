@@ -14,7 +14,8 @@ import {
   PortalAccessRequest, PortalAccessStatus,
   SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
   SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
-  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
+  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
+  PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -187,8 +188,9 @@ export const api = {
 
     // Invoice Management
     invoices: {
-      list: async (page = 0, size = 20) => {
-        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}`, { method: 'GET' });
+      list: async (page = 0, size = 20, companyId?: number) => {
+        const companyQuery = companyId != null ? `&companyId=${companyId}` : '';
+        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}${companyQuery}`, { method: 'GET' });
         // The API returns a wrapped response for superadmin: { data: [ { success: true, ..., data: { content: [...] } } ] }
         if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           return response.data[0] as ApiResponse<PageableResponse<KazafitInvoice>>;
@@ -608,6 +610,26 @@ export const api = {
       })
   },
 
+  // Plan notifications wave F1 — offline platform payments (run/CONTRACT.md). Flat `Response` envelope.
+  platformPayments: {
+    preview: (companyId: number, params: { planId?: string; period?: string; months?: number }) => {
+      const q = new URLSearchParams();
+      if (params.planId) q.set('planId', params.planId);
+      if (params.period) q.set('period', params.period);
+      if (params.months != null) q.set('months', String(params.months));
+      return request<PlatformPaymentPreview>(`/api/superadmin/companies/${companyId}/payments/preview?${q.toString()}`, { method: 'GET' });
+    },
+    record: (companyId: number, body: RecordPlatformPaymentRequest) =>
+      request<PlatformPaymentResult>(`/api/superadmin/companies/${companyId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    voidInvoice: (invoiceId: string, reason: string) =>
+      request<PlatformPaymentResult>(`/api/superadmin/billing/invoices/${invoiceId}/void`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
+  },
   billing: {
     // Public endpoints — no auth required, respond with a plain array
     getPlans: () =>
