@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Pencil, Plus, Power, Star, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Pencil, Plus, Power, Star, Trash2, XCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { CompanySenderId, FieldErrors, UpdateSenderIdRequest } from '../types';
 
@@ -11,6 +11,7 @@ import { CompanySenderId, FieldErrors, UpdateSenderIdRequest } from '../types';
 //   GET   /api/superadmin/companies/{companyId}/sender-ids          → [SenderId], both statuses, id order; 404 unknown gym
 //   POST  …/sender-ids  {senderName, status?, isDefault?, notes?}  → 201 SenderId; 400 errors.<field>; 409 errors.senderName (duplicate, any case)
 //   PATCH …/sender-ids/{senderId}  partial {status?, isDefault?, notes?} → 200 SenderId; 400 errors.isDefault; 404
+//   DELETE …/sender-ids/{senderId} → 200 SenderId (the removed row); 404 already gone
 // Setting a default clears the previous one; disabling the default clears it (gym falls back to
 // Growsoft). Either way the list is re-read after every write.
 
@@ -42,6 +43,8 @@ export const CompanySenderIds: React.FC<{ companyId: number }> = ({ companyId })
     const [notice, setNotice] = useState('');
     // Inline confirm before disabling the current default.
     const [confirmDisableId, setConfirmDisableId] = useState<number | null>(null);
+    // Inline confirm before deleting a sender ID (it cannot be undone).
+    const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
     // Inline notes editor.
     const [editingNotesId, setEditingNotesId] = useState<number | null>(null);
     const [notesDraft, setNotesDraft] = useState('');
@@ -154,6 +157,25 @@ export const CompanySenderIds: React.FC<{ companyId: number }> = ({ companyId })
         }
     };
 
+    const remove = async (s: CompanySenderId) => {
+        setBusyId(s.id);
+        clearMessages();
+        try {
+            await api.smsAdmin.deleteSenderId(companyId, s.id);
+            setConfirmDeleteId(null);
+            setNotice(s.isDefault
+                ? `${s.senderName} deleted. This gym now has no default sender ID and sends as ${PLATFORM_DEFAULT}.`
+                : `${s.senderName} deleted.`);
+            await load();
+        } catch (e: any) {
+            setConfirmDeleteId(null);
+            setError(e?.status === 404 ? 'This sender ID no longer exists for this gym.' : (e?.message || 'Failed to delete the sender ID.'));
+            if (e?.status === 404) await load();
+        } finally {
+            setBusyId(null);
+        }
+    };
+
     const startEditNotes = (s: CompanySenderId) => {
         clearMessages();
         setNotesError('');
@@ -252,8 +274,41 @@ export const CompanySenderIds: React.FC<{ companyId: number }> = ({ companyId })
                                             >
                                                 <Power size={12} /> {active ? 'Disable' : 'Enable'}
                                             </button>
+                                            <button
+                                                onClick={() => { clearMessages(); setConfirmDisableId(null); setConfirmDeleteId(s.id); }}
+                                                disabled={busyId !== null || confirmDeleteId === s.id}
+                                                aria-label={`Delete sender ID ${s.senderName}`}
+                                                className="px-2 py-1 text-xs border border-red-200 text-red-600 rounded-lg bg-white hover:bg-red-50 disabled:opacity-50 flex items-center gap-1"
+                                            >
+                                                <Trash2 size={12} /> Delete
+                                            </button>
                                         </div>
                                     </div>
+
+                                    {confirmDeleteId === s.id && (
+                                        <div role="alertdialog" aria-label={`Confirm deleting ${s.senderName}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+                                            <AlertTriangle size={14} className="shrink-0" />
+                                            <span className="flex-1 min-w-[12rem]">
+                                                Delete <strong>{s.senderName}</strong> from this gym? This cannot be undone.
+                                                {s.isDefault && <> It is the default, so the gym will send as <strong>{PLATFORM_DEFAULT}</strong> until another is set.</>}
+                                                {' '}Messages already sent keep their sender name; a message still waiting to send with it will go out from the gym&rsquo;s default instead.
+                                            </span>
+                                            <button
+                                                onClick={() => remove(s)}
+                                                disabled={busyId !== null}
+                                                className="px-2 py-1 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-50"
+                                            >
+                                                Delete permanently
+                                            </button>
+                                            <button
+                                                onClick={() => setConfirmDeleteId(null)}
+                                                disabled={busyId !== null}
+                                                className="px-2 py-1 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    )}
 
                                     {confirmDisableId === s.id && (
                                         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
