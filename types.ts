@@ -821,3 +821,58 @@ export interface PlanNotificationTestSendResult {
   providerMessage: string | null;
   remainingThisHour: number;
 }
+
+export interface PlanUpcomingRow {
+  date: string;
+  companyId: number;
+  companyName: string;
+  stage: PlanNotificationStage;
+  offsetDays: number;
+  language: PlanLanguage;
+  phones: string[];
+  skipReason: 'NO_PHONE' | 'OPT_OUT' | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  alreadySent: boolean;
+}
+
+export interface PlanUpcomingResult {
+  remindersEnabled: boolean;
+  sendHour: number;
+  days: number;
+  smsCount: number;
+  gymCount: number;
+  rows: PlanUpcomingRow[];
+}
+
+export type PlanLogStatus = 'CLAIMED' | 'SENT' | 'FAILED' | 'SKIPPED_NO_PHONE' | 'SKIPPED_OPT_OUT';
+
+export interface PlanLogRow {
+  id: number;
+  createdAt: string;
+  sentAt: string | null;
+  companyId: number;
+  companyName: string | null;
+  kind: 'REMINDER' | 'RECEIPT';
+  stage: PlanNotificationStage;
+  offsetDays: number | null;
+  phone: string | null;
+  language: PlanLanguage;
+  status: PlanLogStatus;
+  error: string | null;
+  segments: number;
+  costTzs: number;
+  body: string;
+  invoiceId: string | null;
+}
+
+export interface PlanLogFilters {
+  companyId?: number;
+  kind?: string;
+  stage?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}

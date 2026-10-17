@@ -1,18 +1,22 @@
 import React, { useState } from 'react';
-import { BellRing, FileText, Settings } from 'lucide-react';
+import { BellRing, CalendarClock, FileText, ScrollText, Settings } from 'lucide-react';
 import { SettingsTab } from './planNotifications/SettingsTab';
 import { TemplatesTab } from './planNotifications/TemplatesTab';
+import { UpcomingTab } from './planNotifications/UpcomingTab';
+import { LogTab } from './planNotifications/LogTab';
 
 /**
  * Plan notifications wave AD-3 — `/plan-notifications`. Expiry reminders and payment receipts by SMS,
- * paid by Kazafit. Tabs: Settings, Templates (more tabs land with the reminder job and the stats).
+ * paid by Kazafit. Tabs: Settings, Templates, Upcoming (dry run), Log.
  */
 
-type Tab = 'settings' | 'templates';
+type Tab = 'settings' | 'templates' | 'upcoming' | 'log';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
     { id: 'templates', label: 'Templates', icon: <FileText size={16} /> },
+    { id: 'upcoming', label: 'Upcoming', icon: <CalendarClock size={16} /> },
+    { id: 'log', label: 'Log', icon: <ScrollText size={16} /> },
 ];
 
 export const PlanNotificationsPage: React.FC = () => {
@@ -34,6 +38,8 @@ export const PlanNotificationsPage: React.FC = () => {
             <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6">
                 {tab === 'settings' && <SettingsTab />}
                 {tab === 'templates' && <TemplatesTab />}
+                {tab === 'upcoming' && <UpcomingTab />}
+                {tab === 'log' && <LogTab />}
             </div>
         </div>
     );

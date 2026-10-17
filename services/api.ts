@@ -17,7 +17,8 @@ import {
   CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
   PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
   NotificationPrefs, UpdateNotificationPrefsRequest,
-  PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult
+  PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult,
+  PlanUpcomingResult, PlanLogRow, PlanLogFilters
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -632,6 +633,13 @@ export const api = {
       request<PlanNotificationPreview>('/api/superadmin/plan-notifications/preview', { method: 'POST', body: JSON.stringify(body) }),
     testSend: (body: { phone: string; stage: string; language: string }) =>
       request<PlanNotificationTestSendResult>('/api/superadmin/plan-notifications/test-send', { method: 'POST', body: JSON.stringify(body) }),
+    upcoming: (days = 14) =>
+      request<PlanUpcomingResult>(`/api/superadmin/plan-notifications/upcoming?days=${days}`, { method: 'GET' }),
+    log: (f: PlanLogFilters) => {
+      const q = new URLSearchParams();
+      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, String(v)); });
+      return request<PagedResponse<PlanLogRow>>(`/api/superadmin/plan-notifications/log?${q.toString()}`, { method: 'GET' });
+    },
   },
   // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
   notificationPrefs: {
