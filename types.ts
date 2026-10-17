@@ -876,3 +876,32 @@ export interface PlanLogFilters {
   page?: number;
   size?: number;
 }
+
+// ── Plan notifications wave — F4 stats (run/CONTRACT.md) ──
+
+export interface PlanSmsBreakdown { key: string; sent: number; failed: number; segments: number; costTzs: number }
+
+export interface PlanSmsStats {
+  from: string;
+  to: string;
+  totals: { sent: number; failed: number; inFlight: number; skippedNoPhone: number; skippedOptOut: number; segments: number; costTzs: number };
+  byStage: PlanSmsBreakdown[];
+  byLanguage: PlanSmsBreakdown[];
+  perDay: { date: string; stage: PlanNotificationStage; sent: number; failed: number }[];
+  topErrors: { error: string; count: number }[];
+  missingPhone: { companyId: number; companyName: string; skips: number; lastSkippedAt: string }[];
+}
+
+export interface PlanPaymentBucket { key: string; count: number; amountTzs: number }
+
+export interface PlanExpiryStats {
+  from: string;
+  to: string;
+  now: { active: number; endingIn7: number; endingIn14: number; endingIn30: number; inGrace: number; locked: number;
+         onTrial: number; trialsEndingIn7: number; noPlan: number };
+  funnel: { ended: number; renewedBeforeLock: number; renewedAfterLock: number; notRenewed: number };
+  afterReminder: { companiesReminded: number; renewedWithin7Days: number; rate: number;
+                   byLastStage: { stage: PlanNotificationStage; companies: number }[] };
+  paymentsBySource: PlanPaymentBucket[];
+  paymentsByMethod: PlanPaymentBucket[];
+}

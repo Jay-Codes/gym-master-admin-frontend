@@ -18,7 +18,7 @@ import {
   PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
   NotificationPrefs, UpdateNotificationPrefsRequest,
   PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult,
-  PlanUpcomingResult, PlanLogRow, PlanLogFilters
+  PlanUpcomingResult, PlanLogRow, PlanLogFilters, PlanSmsStats, PlanExpiryStats
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -640,6 +640,10 @@ export const api = {
       Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, String(v)); });
       return request<PagedResponse<PlanLogRow>>(`/api/superadmin/plan-notifications/log?${q.toString()}`, { method: 'GET' });
     },
+    smsStats: (from: string, to: string) =>
+      request<PlanSmsStats>(`/api/superadmin/plan-notifications/stats/sms?from=${from}&to=${to}`, { method: 'GET' }),
+    expiryStats: (from: string, to: string) =>
+      request<PlanExpiryStats>(`/api/superadmin/plan-notifications/stats/expiry?from=${from}&to=${to}`, { method: 'GET' }),
   },
   // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
   notificationPrefs: {

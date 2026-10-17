@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
-import { BellRing, CalendarClock, FileText, ScrollText, Settings } from 'lucide-react';
+import { BarChart3, BellRing, CalendarClock, FileText, ScrollText, Settings } from 'lucide-react';
 import { SettingsTab } from './planNotifications/SettingsTab';
 import { TemplatesTab } from './planNotifications/TemplatesTab';
 import { UpcomingTab } from './planNotifications/UpcomingTab';
 import { LogTab } from './planNotifications/LogTab';
+import { PlanNotificationStats } from './PlanNotificationStats';
 
 /**
  * Plan notifications wave AD-3 — `/plan-notifications`. Expiry reminders and payment receipts by SMS,
- * paid by Kazafit. Tabs: Settings, Templates, Upcoming (dry run), Log.
+ * paid by Kazafit. Tabs: Stats, Settings, Templates, Upcoming (dry run), Log.
  */
 
-type Tab = 'settings' | 'templates' | 'upcoming' | 'log';
+type Tab = 'stats' | 'settings' | 'templates' | 'upcoming' | 'log';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'stats', label: 'Stats', icon: <BarChart3 size={16} /> },
     { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
     { id: 'templates', label: 'Templates', icon: <FileText size={16} /> },
     { id: 'upcoming', label: 'Upcoming', icon: <CalendarClock size={16} /> },
@@ -20,7 +22,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export const PlanNotificationsPage: React.FC = () => {
-    const [tab, setTab] = useState<Tab>('settings');
+    const [tab, setTab] = useState<Tab>('stats');
     return (
         <div className="space-y-6">
             <div>
@@ -36,6 +38,7 @@ export const PlanNotificationsPage: React.FC = () => {
                 ))}
             </div>
             <div className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6">
+                {tab === 'stats' && <PlanNotificationStats />}
                 {tab === 'settings' && <SettingsTab />}
                 {tab === 'templates' && <TemplatesTab />}
                 {tab === 'upcoming' && <UpcomingTab />}
