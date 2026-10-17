@@ -14,7 +14,8 @@ import { CompanySenderId, FieldErrors, UpdateSenderIdRequest } from '../types';
 // Setting a default clears the previous one; disabling the default clears it (gym falls back to
 // Growsoft). Either way the list is re-read after every write.
 
-const SENDER_PATTERN = /^[A-Za-z0-9]{1,11}$/;
+const SENDER_PATTERN = /^[A-Za-z0-9]+( [A-Za-z0-9]+)*$/;
+const SENDER_MAX = 11;
 const PLATFORM_DEFAULT = 'Growsoft';
 const NOTES_MAX = 500;
 
@@ -69,9 +70,9 @@ export const CompanySenderIds: React.FC<{ companyId: number }> = ({ companyId })
 
     useEffect(() => { load(); }, [load]);
 
-    const trimmed = newName.trim();
+    const trimmed = newName.trim().replace(/\s+/g, ' ');
     const nameError = trimmed === '' ? ''
-        : !SENDER_PATTERN.test(trimmed) ? 'Letters and digits only, at most 11 characters, no spaces.'
+        : !SENDER_PATTERN.test(trimmed) || trimmed.length > SENDER_MAX ? 'Letters, digits and spaces only, at most 11 characters (spaces count).'
         : trimmed.toLowerCase() === PLATFORM_DEFAULT.toLowerCase() ? `"${PLATFORM_DEFAULT}" is the platform default and is always available.`
         : senders?.some(s => s.senderName.toLowerCase() === trimmed.toLowerCase()) ? 'This gym already has that sender ID.'
         : '';
@@ -323,12 +324,13 @@ export const CompanySenderIds: React.FC<{ companyId: number }> = ({ companyId })
                             <input
                                 type="text"
                                 value={newName}
-                                maxLength={11}
+                                maxLength={SENDER_MAX}
                                 onChange={e => { setNewName(e.target.value); clearMessages(); setAddErrors(f => ({ ...f, senderName: [] })); }}
                                 className={`${inputClasses} font-mono w-40`}
                                 placeholder="SENDERNAME"
                             />
-                            <span className="text-xs text-gray-400 mt-1">{trimmed.length}/11</span>
+                            <span className="text-xs text-gray-400 mt-1">{trimmed.length}/{SENDER_MAX}</span>
+                            <span className="text-xs text-gray-400">Letters, digits and spaces, up to 11 characters.</span>
                         </div>
                         <div className="flex flex-col flex-1 min-w-[10rem]">
                             <input
