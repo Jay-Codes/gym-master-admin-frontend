@@ -23,6 +23,7 @@ import { SmsPurchasesPage } from './components/SmsPurchasesPage';
 import { csvCell, invoicePeriodLabel, invoicePlanLabel, invoiceSourceLabel, paymentMethodLabel } from './components/invoiceFormat';
 import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
 import { CompanySenderIds } from './components/CompanySenderIds';
+import { CompanyNotificationPrefs } from './components/CompanyNotificationPrefs';
 import { PartnerKycAction } from './components/PartnerKycPanel';
 import { payoutScheduleOptions } from './components/payoutSchedule';
 import {
@@ -1060,6 +1061,7 @@ const CompaniesPage = () => {
 
                         <CompanySmsPricingOverride key={`rate-${viewingCompany.id}`} companyId={viewingCompany.id} />
                         <CompanySenderIds key={`senders-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanyNotificationPrefs key={`notify-${viewingCompany.id}`} companyId={viewingCompany.id} />
                     </div>
                 )}
             </Modal>

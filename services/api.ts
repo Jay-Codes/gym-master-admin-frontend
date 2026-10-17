@@ -15,7 +15,8 @@ import {
   SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
   SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
   CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
-  PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult
+  PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
+  NotificationPrefs, UpdateNotificationPrefsRequest
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -610,6 +611,16 @@ export const api = {
       })
   },
 
+  // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
+  notificationPrefs: {
+    get: (companyId: number) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, { method: 'GET' }),
+    update: (companyId: number, body: UpdateNotificationPrefsRequest) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+  },
   // Plan notifications wave F1 — offline platform payments (run/CONTRACT.md). Flat `Response` envelope.
   platformPayments: {
     preview: (companyId: number, params: { planId?: string; period?: string; months?: number }) => {

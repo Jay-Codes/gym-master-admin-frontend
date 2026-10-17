@@ -745,3 +745,25 @@ export interface UpdateSenderIdRequest {
   isDefault?: boolean;
   notes?: string | null;
 }
+
+// ── Plan notifications wave — F3 company notification preferences (run/CONTRACT.md) ──
+
+export interface NotificationPrefs {
+  planSmsEnabled: boolean;
+  planEmailEnabled: boolean;
+  /** Digits-only MSISDN, e.g. 255712345678. */
+  planPhone: string | null;
+  planEmail: string | null;
+  emailLive: boolean;
+  defaultPhones: string[];
+  effectivePhones: string[];
+  saved: boolean;
+  updatedAt: string | null;
+}
+
+export interface UpdateNotificationPrefsRequest {
+  planSmsEnabled?: boolean;
+  planEmailEnabled?: boolean;
+  planPhone?: string;
+  planEmail?: string;
+}
