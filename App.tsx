@@ -18,6 +18,11 @@ import {
     PortalOtpSettings, PortalOtpSpend, PortalOtpSpendDay, PortalOtpSpendGym
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
+import { SmsPricingPage } from './components/SmsPricingPage';
+import { SmsPurchasesPage } from './components/SmsPurchasesPage';
+import { csvCell, invoicePlanLabel } from './components/invoiceFormat';
+import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
+import { CompanySenderIds } from './components/CompanySenderIds';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
@@ -1050,6 +1055,9 @@ const CompaniesPage = () => {
                                 <CopyableDetail label="Current Status" value={viewingCompany.isActivated ? 'Active' : 'Suspended'} />
                             </div>
                         </div>
+
+                        <CompanySmsPricingOverride key={`rate-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanySenderIds key={`senders-${viewingCompany.id}`} companyId={viewingCompany.id} />
                     </div>
                 )}
             </Modal>
@@ -1955,19 +1963,28 @@ const InvoicesPage = () => {
             return;
         }
 
-        const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At"];
+        // Existing columns first and unchanged in order; kind/SMS/VAT columns appended (S2-T6b, R3 F8).
+        const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At",
+            "Kind", "SMS Credits", "Unit Rate (TZS)", "Subtotal (TZS)", "VAT %", "VAT (TZS)", "Reversed At"];
         const csvContent = [
             headers.join(","),
             ...invoices.map(inv => [
                 inv.id,
-                `"${inv.companyName.replace(/"/g, '""')}"`,
-                `"${inv.planName.replace(/"/g, '""')}"`,
-                inv.period,
+                csvCell(inv.companyName),
+                csvCell(invoicePlanLabel(inv)),
+                csvCell(inv.period),
                 inv.amountTzs,
-                inv.status,
-                inv.issuedAt,
-                inv.dueAt,
-                inv.paidAt || "N/A"
+                csvCell(inv.status),
+                csvCell(inv.issuedAt),
+                csvCell(inv.dueAt),
+                csvCell(inv.paidAt || "N/A"),
+                csvCell(inv.kind ?? "SUBSCRIPTION"),
+                csvCell(inv.smsCredits),
+                csvCell(inv.unitRateTzs),
+                csvCell(inv.subtotalTzs),
+                csvCell(inv.vatRatePercent),
+                csvCell(inv.vatTzs),
+                csvCell(inv.reversedAt),
             ].join(","))
         ].join("\n");
 
@@ -2014,7 +2031,7 @@ const InvoicesPage = () => {
                         header: 'Plan', 
                         accessor: (inv) => (
                             <div>
-                                <div className="text-sm">{inv.planName}</div>
+                                <div className="text-sm">{invoicePlanLabel(inv)}</div>
                                 <div className="text-xs text-gray-400 capitalize">{inv.period}</div>
                             </div>
                         )
@@ -2052,7 +2069,7 @@ const InvoicesPage = () => {
                     <div className="flex items-center justify-end gap-2">
                         <button 
                             onClick={() => {
-                                alert(`Invoice Details: ${inv.id}\nPlan: ${inv.planName}\nAmount: ${inv.amountTzs} TZS`);
+                                alert(`Invoice Details: ${inv.id}\nPlan: ${invoicePlanLabel(inv)}\nAmount: ${inv.amountTzs} TZS`);
                             }} 
                             className="text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors"
                             title="View Details"
@@ -4350,6 +4367,8 @@ const DashboardLayout = () => {
                 <Route path="/partners" element={<PartnersPage />} />
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
+                <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
         </Layout>

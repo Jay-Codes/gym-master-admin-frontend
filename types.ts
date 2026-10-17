@@ -266,9 +266,11 @@ export interface KazafitInvoice {
   id: string;
   companyProfileId: number;
   companyName: string;
-  planId: string;
-  planName: string;
-  planCode: string;
+  // Null on SMS credit invoices (and add-on-only invoices): there is no plan.
+  planId: string | null;
+  planName: string | null;
+  planCode: string | null;
+  /** `monthly` / `yearly` / ...; `once` on SMS credit invoices. */
   period: string;
   amountTzs: number;
   status: string;
@@ -277,7 +279,19 @@ export interface KazafitInvoice {
   nextPaymentAt: string;
   paidAt: string | null;
   addons: KazafitAddon[];
+  // S2-T2 / S2-T3 additive fields (backend KazafitInvoiceResponse). Older payloads may omit them.
+  /** `SUBSCRIPTION` or `SMS_CREDITS`. */
+  kind?: KazafitInvoiceKind | string | null;
+  smsCredits?: number | null;
+  unitRateTzs?: number | null;
+  subtotalTzs?: number | null;
+  vatRatePercent?: number | null;
+  vatTzs?: number | null;
+  /** Set when a superadmin reversed the SMS purchase; the invoice is then `void`. */
+  reversedAt?: string | null;
 }
+
+export type KazafitInvoiceKind = 'SUBSCRIPTION' | 'SMS_CREDITS';
 
 export interface PartnerAnalytics {
   partnersCount: number;
@@ -510,4 +524,156 @@ export interface RunBackfillRequest {
   to: string;
   confirm: boolean;
   force: boolean;
+}
+// --- SMS credits: pricing, purchases, sender IDs (S2-T6) ---
+// Pricing, override and purchase types match the shipped backend (S2-T1 / S2-T3; reconciled in
+// S2-T6a). Sender ID types below are still the plan § 10 assumption: S3-T1 is not built yet.
+
+/** Field-level validation messages from a 400 (`Response.errors`): {field: [message]}. */
+export type FieldErrors = Record<string, string[]>;
+
+/**
+ * The backend's `PagedResponse` (com.jerrycode.gym_services.response.PagedResponse) — not the
+ * Spring page shape of `PageableResponse`. `currentPage` is 0-based.
+ */
+export interface PagedResponse<T> {
+  content: T[];
+  currentPage: number;
+  pageSize: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+/** Shipped limits (SmsPricingService validation). Client hints mirror them; the server decides. */
+export const SMS_PRICING_LIMITS = {
+  rateTzs: { min: 1, max: 100000 },
+  vatRatePercent: { min: 0, max: 100 },   // at most 2 decimals
+  minCredits: { min: 1, max: 1000000 },
+  overrideNoteMax: 500,
+  reversalReasonMax: 500,
+} as const;
+
+/** Platform SMS pricing. Rate is TZS per credit, exclusive of VAT (D9). */
+export interface SmsPricingSettings {
+  rateTzs: number;
+  /** Percentage, e.g. 18.00 means 18%. */
+  vatRatePercent: number;
+  minCredits: number;
+  /** Superadmin label of the last change; null until first changed. */
+  updatedBy: string | null;
+  /** ISO-8601 instant (UTC). */
+  updatedAt: string | null;
+}
+
+/** PUT body: null leaves a field unchanged. */
+export interface UpdateSmsPricingRequest {
+  rateTzs: number | null;
+  vatRatePercent: number | null;
+  minCredits: number | null;
+}
+
+/** Per-gym rate override. Replaces the platform rate for this gym only; VAT and minimum still apply. */
+export interface SmsPricingOverride {
+  companyId: number;
+  rateTzs: number;
+  note: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/** PUT body: rateTzs required (1..100000); note optional, ≤500, blank → null server-side. */
+export interface SetSmsPricingOverrideRequest {
+  rateTzs: number;
+  note?: string | null;
+}
+
+/** The payment's own status, lower case. A reversed purchase stays `completed` with `reversedAt` set. */
+export type SmsPurchaseStatus = 'pending' | 'completed' | 'failed' | 'voided' | 'expired' | 'cancelled';
+
+/**
+ * One SMS credit purchase (backend `SmsCreditPurchaseResponse`). Price fields are frozen at
+ * initiation, whole TZS. Timestamps are ISO-8601 with the +03:00 offset, or null. `invoiceNumber`
+ * is `INV-XXXXXXXX` once completed. `reversedBy` is the reversing superadmin's email.
+ */
+export interface SmsPurchase {
+  paymentId: string;
+  companyId: number;
+  companyName: string | null;
+  credits: number;
+  unitRateTzs: number | null;
+  subtotalTzs: number | null;
+  vatRatePercent: number | null;
+  vatTzs: number | null;
+  totalTzs: number;
+  status: SmsPurchaseStatus | string;
+  invoiceNumber: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  reversedAt: string | null;
+  reversedBy: string | null;
+  reversalReason: string | null;
+}
+
+/**
+ * Status filter values the list accepts (case-insensitive): `reversed` = reversed at any time;
+ * `completed` = completed and not reversed; `failed` = failed, voided, expired or cancelled;
+ * the rest match exactly. Anything else is a 400.
+ */
+/**
+ * Result of `POST /api/superadmin/sms-purchases/{paymentId}/check-with-snippe`.
+ * 200 → `updated`: data is the purchase row after the check (completed + credited if Snippe says paid).
+ * 202 → `still`: Snippe does not report the payment as completed; `snippeStatus` is its status.
+ */
+export type CheckWithSnippeResult =
+  | { kind: 'updated'; purchase: SmsPurchase; message: string | null }
+  | { kind: 'still'; snippeStatus: string | null; message: string | null };
+
+export type SmsPurchaseStatusFilter = 'completed' | 'pending' | 'failed' | 'reversed' | 'voided' | 'expired' | 'cancelled';
+
+export interface SmsPurchaseFilters {
+  companyId?: number;
+  from?: string;   // YYYY-MM-DD, inclusive EAT calendar day
+  to?: string;     // YYYY-MM-DD, inclusive EAT calendar day
+  status?: SmsPurchaseStatusFilter;
+  page?: number;   // 0-based
+  size?: number;   // server clamps to 1..100
+}
+
+export type SenderIdStatus = 'ACTIVE' | 'DISABLED';
+
+/**
+ * An approved sender ID, as `GET /api/superadmin/companies/{companyId}/sender-ids` returns it
+ * (S3-T1 `SenderIdResponse`). Registration with Beem/TCRA happens offline (D1).
+ * `createdBy` is the superadmin's email; timestamps are `LocalDateTime` (no offset).
+ */
+export interface CompanySenderId {
+  id: number;
+  companyId: number;
+  senderName: string;
+  status: SenderIdStatus;
+  isDefault: boolean;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * `senderName` must match `^[A-Za-z0-9]{1,11}$` after trim and must not be "Growsoft" (any case).
+ * `status` defaults to ACTIVE, `isDefault` to false; default + DISABLED is refused (400). notes ≤ 500.
+ */
+export interface CreateSenderIdRequest {
+  senderName: string;
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
+}
+
+/** Partial: absent/null = unchanged; blank `notes` clears them. */
+export interface UpdateSenderIdRequest {
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
 }

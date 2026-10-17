@@ -11,7 +11,10 @@ import {
   UpdatePlanRequest, PlanAudit,
   BackfillPreview, BackfillRun, RunBackfillRequest,
   PortalOtpSettings, PortalOtpSpend,
-  PortalAccessRequest, PortalAccessStatus
+  PortalAccessRequest, PortalAccessStatus,
+  SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
+  SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
+  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -68,7 +71,13 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
     }
 
     if (!response.ok) {
-      throw new Error(data.message || `Request failed with status ${response.status}`);
+      // `status` lets a caller tell "not there" (404) from a real failure.
+      const err: any = new Error(data.message || `Request failed with status ${response.status}`);
+      err.status = response.status;
+      // Field-level validation messages (`Response.errors`: {field: [message]}), when present.
+      const fieldErrors = data?.errors ?? (Array.isArray(data?.data) ? data.data[0]?.errors : undefined);
+      if (fieldErrors && typeof fieldErrors === 'object') err.errors = fieldErrors;
+      throw err;
     }
 
     return data;
@@ -472,6 +481,100 @@ export const api = {
       });
       return unwrapSuperAdminResponse<PortalAccessStatus>(response);
     },
+  },
+
+  // SMS credits: platform pricing, per-gym override, purchases/reversal, sender IDs (S2-T6).
+  // Pricing, override and purchases are aligned with the shipped backend (S2-T1 / S2-T3, see
+  // run/S2-T6a.md): flat `Response` envelope, list `data` is a `PagedResponse`. A 400 carries
+  // `err.errors` ({field: [message]}) for inline field errors. Sender IDs follow S3-T1 as shipped
+  // (run/S2-T6c.md).
+  smsAdmin: {
+    getPricing: async () =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'GET' })),
+    // null fields are left unchanged server-side; nothing is saved if any field is invalid (400).
+    updatePricing: async (data: UpdateSmsPricingRequest) =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'PUT', body: JSON.stringify(data) })),
+
+    // 200 with data: null when the gym has no override. 404 means the company does not exist.
+    getPricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<SmsPricingOverride | null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'GET' })),
+    setPricingOverride: async (companyId: number, data: SetSmsPricingOverrideRequest) =>
+      unwrapSuperAdminResponse<SmsPricingOverride>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, {
+          method: 'PUT', body: JSON.stringify(data)
+        })),
+    // Idempotent: 200 with data: null whether or not an override existed.
+    deletePricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'DELETE' })),
+
+    // 400 on a malformed date, from > to, or an unknown status.
+    listPurchases: async (filters: SmsPurchaseFilters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.companyId) params.set('companyId', String(filters.companyId));
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      if (filters.status) params.set('status', filters.status);
+      params.set('page', String(filters.page ?? 0));
+      params.set('size', String(filters.size ?? 20));
+      return unwrapSuperAdminResponse<PagedResponse<SmsPurchase>>(
+        await request<any>(`/api/superadmin/sms-purchases?${params.toString()}`, { method: 'GET' }));
+    },
+    // Debits the full purchased credits; the gym's balance may go negative. Money refund is offline.
+    // 200 data = the reversed row. 409 already reversed / not completed; 400 not an SMS purchase or
+    // bad reason; 404 unknown payment.
+    reversePurchase: async (paymentId: string, reason: string) =>
+      unwrapSuperAdminResponse<SmsPurchase>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/reverse`, {
+          method: 'POST', body: JSON.stringify({ reason })
+        })),
+    // Asks Snippe for the real status of a purchase still `pending` (> 10 min old) and, if paid,
+    // fulfils it through the same webhook fulfilment path (credits + invoice). No body.
+    // 200 data = the updated purchase row; 202 data = {snippeStatus} (not paid yet).
+    // request() does not expose the HTTP status of a success, so 200 vs 202 is told apart by shape:
+    // a row carries `paymentId`. Errors throw with err.status: 409 not pending, 404 unknown payment,
+    // 403 not a superadmin, 502 Snippe unreachable.
+    checkWithSnippe: async (paymentId: string): Promise<CheckWithSnippeResult> => {
+      const res = unwrapSuperAdminResponse<any>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/check-with-snippe`, {
+          method: 'POST'
+        }));
+      const data = res?.data;
+      const message = typeof res?.message === 'string' ? res.message : null;
+      if (data && typeof data === 'object' && typeof data.paymentId === 'string') {
+        return { kind: 'updated', purchase: data as SmsPurchase, message };
+      }
+      const snippeStatus = data && typeof data === 'object' && data.snippeStatus != null ? String(data.snippeStatus) : null;
+      return { kind: 'still', snippeStatus, message };
+    },
+
+    // Flat `Response` whose `data` is the array itself (both statuses, id order). Not passed through
+    // unwrapSuperAdminResponse: that helper would take a non-empty data array for the old
+    // ResponseWrapper and return the first sender row instead of the response. 404 unknown gym.
+    listSenderIds: async (companyId: number): Promise<ApiResponse<CompanySenderId[]>> => {
+      const res = await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, { method: 'GET' });
+      const first = Array.isArray(res?.data) ? res.data[0] : undefined;
+      const isWrapper = first && typeof first === 'object' && 'success' in first && !('senderName' in first);
+      return (isWrapper ? first : res) as ApiResponse<CompanySenderId[]>;
+    },
+    // 201 data = the new row. 400 errors.senderName|status|isDefault|notes; 409 errors.senderName
+    // (duplicate in this gym, ignoring case); 404 unknown gym.
+    createSenderId: async (companyId: number, data: CreateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, {
+          method: 'POST', body: JSON.stringify(data)
+        })),
+    // Partial {status?, isDefault?, notes?}. 200 data = the row. Setting a default clears the previous
+    // one; disabling the default clears it (gym falls back to Growsoft) — callers re-read the list.
+    // 400 errors.isDefault when making a DISABLED sender default; 404 sender not in this gym.
+    updateSenderId: async (companyId: number, senderId: number, data: UpdateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
+          method: 'PATCH', body: JSON.stringify(data)
+        })),
   },
 
   backfill: {
