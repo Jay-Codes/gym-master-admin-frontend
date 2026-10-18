@@ -266,9 +266,11 @@ export interface KazafitInvoice {
   id: string;
   companyProfileId: number;
   companyName: string;
-  planId: string;
-  planName: string;
-  planCode: string;
+  // Null on SMS credit invoices (and add-on-only invoices): there is no plan.
+  planId: string | null;
+  planName: string | null;
+  planCode: string | null;
+  /** `monthly` / `yearly` / ...; `once` on SMS credit invoices. */
   period: string;
   amountTzs: number;
   status: string;
@@ -277,6 +279,83 @@ export interface KazafitInvoice {
   nextPaymentAt: string;
   paidAt: string | null;
   addons: KazafitAddon[];
+  // S2-T2 / S2-T3 additive fields (backend KazafitInvoiceResponse). Older payloads may omit them.
+  /** `SUBSCRIPTION` or `SMS_CREDITS`. */
+  kind?: KazafitInvoiceKind | string | null;
+  smsCredits?: number | null;
+  unitRateTzs?: number | null;
+  subtotalTzs?: number | null;
+  vatRatePercent?: number | null;
+  vatTzs?: number | null;
+  /** Set when a superadmin reversed the SMS purchase; the invoice is then `void`. */
+  reversedAt?: string | null;
+  // Plan notifications wave BE-3 (V110). Null on rows that predate period tracking.
+  periodStartAt?: string | null;
+  periodEndAt?: string | null;
+  source?: InvoiceSource | null;
+  paymentMethod?: PaymentMethod | null;
+  paymentReference?: string | null;
+}
+
+export type KazafitInvoiceKind = 'SUBSCRIPTION' | 'SMS_CREDITS';
+
+// ── Plan notifications wave — F1 offline platform payments (run/CONTRACT.md) ──
+
+export type InvoiceSource = 'SNIPPE' | 'SUPERADMIN' | 'OFFLINE' | 'BACKFILL';
+export type PaymentMethod =
+  'MPESA' | 'TIGO_PESA' | 'AIRTEL_MONEY' | 'HALOPESA' | 'BANK_TRANSFER' | 'CASH' | 'OTHER';
+export type PlatformPaymentMode = 'NEW' | 'BACKFILL';
+export type PlatformPaymentPeriod = 'monthly' | 'annually' | 'custom';
+
+export interface PlatformPaymentPreview {
+  companyId: number;
+  companyName: string;
+  status: string;
+  currentPlanId: string | null;
+  currentPlanName: string | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  graceDays: number;
+  planId: string | null;
+  planName: string | null;
+  period: PlatformPaymentPeriod;
+  months: number;
+  /** yyyy-MM-dd (EAT day) */
+  startDate: string;
+  endDate: string;
+  expiryDate: string;
+  amountTzs: number;
+}
+
+export interface RecordPlatformPaymentRequest {
+  mode: PlatformPaymentMode;
+  planId: string;
+  period: PlatformPaymentPeriod;
+  months?: number;
+  amountTzs: number;
+  paymentMethod: PaymentMethod;
+  paymentReference?: string;
+  paidAt: string;
+  startDate: string;
+  endDate: string;
+  expiryDate?: string;
+  notes?: string;
+  sendReceipt?: boolean;
+  force?: boolean;
+}
+
+export interface PlatformPaymentResult {
+  invoice: KazafitInvoice;
+  notes: string | null;
+  warnings: string[];
+  statusBefore: string | null;
+  statusAfter: string | null;
+  planEndsAtBefore: string | null;
+  planEndsAtAfter: string | null;
+  expiresAtBefore: string | null;
+  expiresAtAfter: string | null;
+  receiptQueued: boolean;
+  expiryAffected: boolean;
 }
 
 export interface PartnerAnalytics {
@@ -300,6 +379,7 @@ export interface Partner {
   commissionType: 'flat' | 'percent';
   totalReferrals: number;
   totalCommissionTzs: number;
+  /** pending | approved | rejected (V17 CHECK, lower case) */
   kycStatus: string;
   userId: number;
   payoutSchedule: string;
@@ -333,6 +413,8 @@ export interface CommissionOverrideRequest {
   type: 'flat' | 'percent';
   schedule: string;
 }
+
+export type KycDecision = 'approved' | 'rejected';
 
 export interface PartnerConfig {
   defaultCommissionRate: number;
@@ -510,4 +592,316 @@ export interface RunBackfillRequest {
   to: string;
   confirm: boolean;
   force: boolean;
+}
+// --- SMS credits: pricing, purchases, sender IDs (S2-T6) ---
+// Pricing, override and purchase types match the shipped backend (S2-T1 / S2-T3; reconciled in
+// S2-T6a). Sender ID types below are still the plan § 10 assumption: S3-T1 is not built yet.
+
+/** Field-level validation messages from a 400 (`Response.errors`): {field: [message]}. */
+export type FieldErrors = Record<string, string[]>;
+
+/**
+ * The backend's `PagedResponse` (com.jerrycode.gym_services.response.PagedResponse) — not the
+ * Spring page shape of `PageableResponse`. `currentPage` is 0-based.
+ */
+export interface PagedResponse<T> {
+  content: T[];
+  currentPage: number;
+  pageSize: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+/** Shipped limits (SmsPricingService validation). Client hints mirror them; the server decides. */
+export const SMS_PRICING_LIMITS = {
+  rateTzs: { min: 1, max: 100000 },
+  vatRatePercent: { min: 0, max: 100 },   // at most 2 decimals
+  minCredits: { min: 1, max: 1000000 },
+  overrideNoteMax: 500,
+  reversalReasonMax: 500,
+} as const;
+
+/** Platform SMS pricing. Rate is TZS per credit, exclusive of VAT (D9). */
+export interface SmsPricingSettings {
+  rateTzs: number;
+  /** Percentage, e.g. 18.00 means 18%. */
+  vatRatePercent: number;
+  minCredits: number;
+  /** Superadmin label of the last change; null until first changed. */
+  updatedBy: string | null;
+  /** ISO-8601 instant (UTC). */
+  updatedAt: string | null;
+}
+
+/** PUT body: null leaves a field unchanged. */
+export interface UpdateSmsPricingRequest {
+  rateTzs: number | null;
+  vatRatePercent: number | null;
+  minCredits: number | null;
+}
+
+/** Per-gym rate override. Replaces the platform rate for this gym only; VAT and minimum still apply. */
+export interface SmsPricingOverride {
+  companyId: number;
+  rateTzs: number;
+  note: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+/** PUT body: rateTzs required (1..100000); note optional, ≤500, blank → null server-side. */
+export interface SetSmsPricingOverrideRequest {
+  rateTzs: number;
+  note?: string | null;
+}
+
+/** The payment's own status, lower case. A reversed purchase stays `completed` with `reversedAt` set. */
+export type SmsPurchaseStatus = 'pending' | 'completed' | 'failed' | 'voided' | 'expired' | 'cancelled';
+
+/**
+ * One SMS credit purchase (backend `SmsCreditPurchaseResponse`). Price fields are frozen at
+ * initiation, whole TZS. Timestamps are ISO-8601 with the +03:00 offset, or null. `invoiceNumber`
+ * is `INV-XXXXXXXX` once completed. `reversedBy` is the reversing superadmin's email.
+ */
+export interface SmsPurchase {
+  paymentId: string;
+  companyId: number;
+  companyName: string | null;
+  credits: number;
+  unitRateTzs: number | null;
+  subtotalTzs: number | null;
+  vatRatePercent: number | null;
+  vatTzs: number | null;
+  totalTzs: number;
+  status: SmsPurchaseStatus | string;
+  invoiceNumber: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  reversedAt: string | null;
+  reversedBy: string | null;
+  reversalReason: string | null;
+}
+
+/**
+ * Status filter values the list accepts (case-insensitive): `reversed` = reversed at any time;
+ * `completed` = completed and not reversed; `failed` = failed, voided, expired or cancelled;
+ * the rest match exactly. Anything else is a 400.
+ */
+/**
+ * Result of `POST /api/superadmin/sms-purchases/{paymentId}/check-with-snippe`.
+ * 200 → `updated`: data is the purchase row after the check (completed + credited if Snippe says paid).
+ * 202 → `still`: Snippe does not report the payment as completed; `snippeStatus` is its status.
+ */
+export type CheckWithSnippeResult =
+  | { kind: 'updated'; purchase: SmsPurchase; message: string | null }
+  | { kind: 'still'; snippeStatus: string | null; message: string | null };
+
+export type SmsPurchaseStatusFilter = 'completed' | 'pending' | 'failed' | 'reversed' | 'voided' | 'expired' | 'cancelled';
+
+export interface SmsPurchaseFilters {
+  companyId?: number;
+  from?: string;   // YYYY-MM-DD, inclusive EAT calendar day
+  to?: string;     // YYYY-MM-DD, inclusive EAT calendar day
+  status?: SmsPurchaseStatusFilter;
+  page?: number;   // 0-based
+  size?: number;   // server clamps to 1..100
+}
+
+export type SenderIdStatus = 'ACTIVE' | 'DISABLED';
+
+/**
+ * An approved sender ID, as `GET /api/superadmin/companies/{companyId}/sender-ids` returns it
+ * (S3-T1 `SenderIdResponse`). Registration with Beem/TCRA happens offline (D1).
+ * `createdBy` is the superadmin's email; timestamps are `LocalDateTime` (no offset).
+ */
+export interface CompanySenderId {
+  id: number;
+  companyId: number;
+  senderName: string;
+  status: SenderIdStatus;
+  isDefault: boolean;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * `senderName` must match `^[A-Za-z0-9]{1,11}$` after trim and must not be "Growsoft" (any case).
+ * `status` defaults to ACTIVE, `isDefault` to false; default + DISABLED is refused (400). notes ≤ 500.
+ */
+export interface CreateSenderIdRequest {
+  senderName: string;
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
+}
+
+/** Partial: absent/null = unchanged; blank `notes` clears them. */
+export interface UpdateSenderIdRequest {
+  status?: SenderIdStatus;
+  isDefault?: boolean;
+  notes?: string | null;
+}
+
+// ── Plan notifications wave — F3 company notification preferences (run/CONTRACT.md) ──
+
+export interface NotificationPrefs {
+  planSmsEnabled: boolean;
+  planEmailEnabled: boolean;
+  /** Digits-only MSISDN, e.g. 255712345678. */
+  planPhone: string | null;
+  planEmail: string | null;
+  emailLive: boolean;
+  defaultPhones: string[];
+  effectivePhones: string[];
+  saved: boolean;
+  updatedAt: string | null;
+}
+
+export interface UpdateNotificationPrefsRequest {
+  planSmsEnabled?: boolean;
+  planEmailEnabled?: boolean;
+  planPhone?: string;
+  planEmail?: string;
+}
+
+// ── Plan notifications wave — F2 settings and templates (run/CONTRACT.md) ──
+
+export type PlanNotificationStage = 'BEFORE_END' | 'END_DAY' | 'GRACE' | 'LOCKED' | 'RECEIPT';
+export type PlanLanguage = 'EN' | 'SW';
+export type PlanLanguageMode = 'COMPANY' | 'EN' | 'SW';
+
+export interface PlanNotificationSettings {
+  remindersEnabled: boolean;
+  receiptsEnabled: boolean;
+  defaultGraceDays: number;
+  beforeEndOffsets: number[];
+  onEndDay: boolean;
+  graceOffsets: number[];
+  afterLockOffsets: number[];
+  sendHour: number;
+  languageMode: PlanLanguageMode;
+  includeTrial: boolean;
+  maxSendsPerRun: number;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationTemplate {
+  stage: PlanNotificationStage;
+  language: PlanLanguage;
+  body: string;
+  isDefault: boolean;
+  placeholders: string[];
+  sample: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export interface PlanNotificationPreview {
+  text: string;
+  characters: number;
+  segments: number;
+  encoding: string;
+  errors: string[];
+  placeholders: string[];
+}
+
+export interface PlanNotificationTestSendResult {
+  phone: string;
+  text: string;
+  segments: number;
+  accepted: boolean;
+  providerMessage: string | null;
+  remainingThisHour: number;
+}
+
+export interface PlanUpcomingRow {
+  date: string;
+  companyId: number;
+  companyName: string;
+  stage: PlanNotificationStage;
+  offsetDays: number;
+  language: PlanLanguage;
+  phones: string[];
+  skipReason: 'NO_PHONE' | 'OPT_OUT' | null;
+  planEndsAt: string | null;
+  expiresAt: string | null;
+  alreadySent: boolean;
+}
+
+export interface PlanUpcomingResult {
+  remindersEnabled: boolean;
+  sendHour: number;
+  days: number;
+  smsCount: number;
+  gymCount: number;
+  rows: PlanUpcomingRow[];
+}
+
+export type PlanLogStatus = 'CLAIMED' | 'SENT' | 'FAILED' | 'SKIPPED_NO_PHONE' | 'SKIPPED_OPT_OUT';
+
+export interface PlanLogRow {
+  id: number;
+  createdAt: string;
+  sentAt: string | null;
+  companyId: number;
+  companyName: string | null;
+  kind: 'REMINDER' | 'RECEIPT';
+  stage: PlanNotificationStage;
+  offsetDays: number | null;
+  phone: string | null;
+  language: PlanLanguage;
+  status: PlanLogStatus;
+  error: string | null;
+  segments: number;
+  costTzs: number;
+  body: string;
+  invoiceId: string | null;
+}
+
+export interface PlanLogFilters {
+  companyId?: number;
+  kind?: string;
+  stage?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+// ── Plan notifications wave — F4 stats (run/CONTRACT.md) ──
+
+export interface PlanSmsBreakdown { key: string; sent: number; failed: number; segments: number; costTzs: number }
+
+export interface PlanSmsStats {
+  from: string;
+  to: string;
+  totals: { sent: number; failed: number; inFlight: number; skippedNoPhone: number; skippedOptOut: number; segments: number; costTzs: number };
+  byStage: PlanSmsBreakdown[];
+  byLanguage: PlanSmsBreakdown[];
+  perDay: { date: string; stage: PlanNotificationStage; sent: number; failed: number }[];
+  topErrors: { error: string; count: number }[];
+  missingPhone: { companyId: number; companyName: string; skips: number; lastSkippedAt: string }[];
+}
+
+export interface PlanPaymentBucket { key: string; count: number; amountTzs: number }
+
+export interface PlanExpiryStats {
+  from: string;
+  to: string;
+  now: { active: number; endingIn7: number; endingIn14: number; endingIn30: number; inGrace: number; locked: number;
+         onTrial: number; trialsEndingIn7: number; noPlan: number };
+  funnel: { ended: number; renewedBeforeLock: number; renewedAfterLock: number; notRenewed: number };
+  afterReminder: { companiesReminded: number; renewedWithin7Days: number; rate: number;
+                   byLastStage: { stage: PlanNotificationStage; companies: number }[] };
+  paymentsBySource: PlanPaymentBucket[];
+  paymentsByMethod: PlanPaymentBucket[];
 }

@@ -18,6 +18,15 @@ import {
     PortalOtpSettings, PortalOtpSpend, PortalOtpSpendDay, PortalOtpSpendGym
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
+import { SmsPricingPage } from './components/SmsPricingPage';
+import { PlanNotificationsPage } from './components/PlanNotificationsPage';
+import { SmsPurchasesPage } from './components/SmsPurchasesPage';
+import { csvCell, invoicePeriodLabel, invoicePlanLabel, invoiceSourceLabel, paymentMethodLabel } from './components/invoiceFormat';
+import { CompanySmsPricingOverride } from './components/CompanySmsPricingOverride';
+import { CompanySenderIds } from './components/CompanySenderIds';
+import { CompanyNotificationPrefs } from './components/CompanyNotificationPrefs';
+import { PartnerKycAction } from './components/PartnerKycPanel';
+import { payoutScheduleOptions } from './components/payoutSchedule';
 import {
     Plus, Edit2, Trash2, Power, Search,
     ChevronLeft, ChevronRight, Loader2, CheckCircle2, XCircle,
@@ -1050,6 +1059,10 @@ const CompaniesPage = () => {
                                 <CopyableDetail label="Current Status" value={viewingCompany.isActivated ? 'Active' : 'Suspended'} />
                             </div>
                         </div>
+
+                        <CompanySmsPricingOverride key={`rate-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanySenderIds key={`senders-${viewingCompany.id}`} companyId={viewingCompany.id} />
+                        <CompanyNotificationPrefs key={`notify-${viewingCompany.id}`} companyId={viewingCompany.id} />
                     </div>
                 )}
             </Modal>
@@ -1955,19 +1968,34 @@ const InvoicesPage = () => {
             return;
         }
 
-        const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At"];
+        // Existing columns first and unchanged in order; kind/SMS/VAT columns appended (S2-T6b, R3 F8).
+        const headers = ["ID", "Company Name", "Plan", "Period", "Amount (TZS)", "Status", "Issued At", "Due At", "Paid At",
+            "Kind", "SMS Credits", "Unit Rate (TZS)", "Subtotal (TZS)", "VAT %", "VAT (TZS)", "Reversed At",
+            "Source", "Payment Method", "Payment Reference", "Period Start", "Period End"];
         const csvContent = [
             headers.join(","),
             ...invoices.map(inv => [
                 inv.id,
-                `"${inv.companyName.replace(/"/g, '""')}"`,
-                `"${inv.planName.replace(/"/g, '""')}"`,
-                inv.period,
+                csvCell(inv.companyName),
+                csvCell(invoicePlanLabel(inv)),
+                csvCell(inv.period),
                 inv.amountTzs,
-                inv.status,
-                inv.issuedAt,
-                inv.dueAt,
-                inv.paidAt || "N/A"
+                csvCell(inv.status),
+                csvCell(inv.issuedAt),
+                csvCell(inv.dueAt),
+                csvCell(inv.paidAt || "N/A"),
+                csvCell(inv.kind ?? "SUBSCRIPTION"),
+                csvCell(inv.smsCredits),
+                csvCell(inv.unitRateTzs),
+                csvCell(inv.subtotalTzs),
+                csvCell(inv.vatRatePercent),
+                csvCell(inv.vatTzs),
+                csvCell(inv.reversedAt),
+                csvCell(inv.source),
+                csvCell(inv.paymentMethod),
+                csvCell(inv.paymentReference),
+                csvCell(inv.periodStartAt),
+                csvCell(inv.periodEndAt),
             ].join(","))
         ].join("\n");
 
@@ -2014,8 +2042,16 @@ const InvoicesPage = () => {
                         header: 'Plan', 
                         accessor: (inv) => (
                             <div>
-                                <div className="text-sm">{inv.planName}</div>
+                                <div className="text-sm">{invoicePlanLabel(inv)}</div>
                                 <div className="text-xs text-gray-400 capitalize">{inv.period}</div>
+                                {inv.periodStartAt && <div className="text-[11px] text-gray-500">{invoicePeriodLabel(inv)}</div>}
+                                {inv.source && inv.source !== 'SNIPPE' && (
+                                    <div className="text-[11px] text-gray-500">
+                                        {invoiceSourceLabel(inv.source)}
+                                        {inv.paymentMethod && ` · ${paymentMethodLabel(inv.paymentMethod)}`}
+                                        {inv.paymentReference && <span className="font-mono"> {inv.paymentReference}</span>}
+                                    </div>
+                                )}
                             </div>
                         )
                     },
@@ -2052,7 +2088,7 @@ const InvoicesPage = () => {
                     <div className="flex items-center justify-end gap-2">
                         <button 
                             onClick={() => {
-                                alert(`Invoice Details: ${inv.id}\nPlan: ${inv.planName}\nAmount: ${inv.amountTzs} TZS`);
+                                alert(`Invoice Details: ${inv.id}\nPlan: ${invoicePlanLabel(inv)}\nAmount: ${inv.amountTzs} TZS`);
                             }} 
                             className="text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors"
                             title="View Details"
@@ -2343,6 +2379,7 @@ const PartnersPage = () => {
                 ]}
                 actions={(p: Partner) => (
                     <div className="flex items-center justify-end gap-2">
+                        <PartnerKycAction partner={p} onUpdated={u => setPartners(prev => prev.map(x => x.id === u.id ? u : x))} />
                         <button
                             onClick={() => fetchHistory(p)}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
@@ -2413,14 +2450,14 @@ const PartnersPage = () => {
 
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Payment Schedule</label>
-                            <input
-                                type="text"
+                            <select
                                 required
-                                placeholder="e.g. Monthly, Quarterly, Weekly"
                                 className={inputClasses}
                                 value={formData.schedule}
                                 onChange={e => setFormData({ ...formData, schedule: e.target.value })}
-                            />
+                            >
+                                {payoutScheduleOptions(formData.schedule).map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
                         </div>
 
                         <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
@@ -2494,10 +2531,7 @@ const PartnersPage = () => {
                             value={configFormData.defaultPayoutSchedule}
                             onChange={e => setConfigFormData({ ...configFormData, defaultPayoutSchedule: e.target.value })}
                         >
-                            <option value="Weekly">Weekly</option>
-                            <option value="Monthly">Monthly</option>
-                            <option value="Quarterly">Quarterly</option>
-                            <option value="On Demand">On Demand</option>
+                            {payoutScheduleOptions(configFormData.defaultPayoutSchedule).map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                     </div>
 
@@ -4350,6 +4384,9 @@ const DashboardLayout = () => {
                 <Route path="/partners" element={<PartnersPage />} />
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
+                <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/plan-notifications" element={<PlanNotificationsPage />} />
+                <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
             </Routes>
         </Layout>

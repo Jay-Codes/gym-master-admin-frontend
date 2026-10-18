@@ -5,13 +5,20 @@ import {
   SmsBalanceData, UpdateSmsBalanceRequest,
   BillingPlan, BillingAddon, PaymentInitiateRequest, PaymentHistory,
   CreatePlanRequest, KazafitInvoice, PartnerAnalytics, Partner, CommissionOverrideRequest,
-  PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod,
+  PartnerConfig, PartnerHistoryEntry, PartnerPaymentMethod, KycDecision,
   OnboardingStep, OnboardingData, OnboardingResponse,
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit,
   BackfillPreview, BackfillRun, RunBackfillRequest,
   PortalOtpSettings, PortalOtpSpend,
-  PortalAccessRequest, PortalAccessStatus
+  PortalAccessRequest, PortalAccessStatus,
+  SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
+  SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
+  CompanySenderId, CreateSenderIdRequest, UpdateSenderIdRequest,
+  PlatformPaymentPreview, RecordPlatformPaymentRequest, PlatformPaymentResult,
+  NotificationPrefs, UpdateNotificationPrefsRequest,
+  PlanNotificationSettings, PlanNotificationTemplate, PlanNotificationPreview, PlanNotificationTestSendResult,
+  PlanUpcomingResult, PlanLogRow, PlanLogFilters, PlanSmsStats, PlanExpiryStats
 } from '../types';
 import { clearSession, getOnboardingToken, getToken } from './session';
 
@@ -68,7 +75,13 @@ const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<
     }
 
     if (!response.ok) {
-      throw new Error(data.message || `Request failed with status ${response.status}`);
+      // `status` lets a caller tell "not there" (404) from a real failure.
+      const err: any = new Error(data.message || `Request failed with status ${response.status}`);
+      err.status = response.status;
+      // Field-level validation messages (`Response.errors`: {field: [message]}), when present.
+      const fieldErrors = data?.errors ?? (Array.isArray(data?.data) ? data.data[0]?.errors : undefined);
+      if (fieldErrors && typeof fieldErrors === 'object') err.errors = fieldErrors;
+      throw err;
     }
 
     return data;
@@ -178,8 +191,9 @@ export const api = {
 
     // Invoice Management
     invoices: {
-      list: async (page = 0, size = 20) => {
-        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}`, { method: 'GET' });
+      list: async (page = 0, size = 20, companyId?: number) => {
+        const companyQuery = companyId != null ? `&companyId=${companyId}` : '';
+        const response = await request<any>(`/api/superadmin/billing/invoices?page=${page}&size=${size}${companyQuery}`, { method: 'GET' });
         // The API returns a wrapped response for superadmin: { data: [ { success: true, ..., data: { content: [...] } } ] }
         if (response.data && Array.isArray(response.data) && response.data.length > 0) {
           return response.data[0] as ApiResponse<PageableResponse<KazafitInvoice>>;
@@ -262,6 +276,17 @@ export const api = {
         return request<Partner>(`/api/superadmin/partners/${id}/commission${query}`, {
           method: 'PUT'
         });
+      },
+      // KZ-47: superadmin KYC decision. Accepts the wrapped (`{data:[Response]}`) or flat
+      // `Response` envelope and returns the updated partner.
+      updateKyc: async (id: string, status: KycDecision): Promise<Partner> => {
+        const response = await request<any>(`/api/superadmin/partners/${encodeURIComponent(id)}/kyc`, {
+          method: 'PUT',
+          body: JSON.stringify({ status })
+        });
+        const inner: any = Array.isArray(response?.data) ? response.data[0] : response;
+        if (inner && inner.success === false) throw new Error(inner.message || 'Failed to update KYC status');
+        return (inner?.data ?? {}) as Partner;
       },
       getPaymentMethods: async (id: string) => {
         const response = await request<any>(`/api/superadmin/partners/${id}/payment-methods`, { method: 'GET' });
@@ -474,6 +499,108 @@ export const api = {
     },
   },
 
+  // SMS credits: platform pricing, per-gym override, purchases/reversal, sender IDs (S2-T6).
+  // Pricing, override and purchases are aligned with the shipped backend (S2-T1 / S2-T3, see
+  // run/S2-T6a.md): flat `Response` envelope, list `data` is a `PagedResponse`. A 400 carries
+  // `err.errors` ({field: [message]}) for inline field errors. Sender IDs follow S3-T1 as shipped
+  // (run/S2-T6c.md).
+  smsAdmin: {
+    getPricing: async () =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'GET' })),
+    // null fields are left unchanged server-side; nothing is saved if any field is invalid (400).
+    updatePricing: async (data: UpdateSmsPricingRequest) =>
+      unwrapSuperAdminResponse<SmsPricingSettings>(
+        await request<any>('/api/superadmin/sms-pricing', { method: 'PUT', body: JSON.stringify(data) })),
+
+    // 200 with data: null when the gym has no override. 404 means the company does not exist.
+    getPricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<SmsPricingOverride | null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'GET' })),
+    setPricingOverride: async (companyId: number, data: SetSmsPricingOverrideRequest) =>
+      unwrapSuperAdminResponse<SmsPricingOverride>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, {
+          method: 'PUT', body: JSON.stringify(data)
+        })),
+    // Idempotent: 200 with data: null whether or not an override existed.
+    deletePricingOverride: async (companyId: number) =>
+      unwrapSuperAdminResponse<null>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sms-pricing-override`, { method: 'DELETE' })),
+
+    // 400 on a malformed date, from > to, or an unknown status.
+    listPurchases: async (filters: SmsPurchaseFilters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.companyId) params.set('companyId', String(filters.companyId));
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      if (filters.status) params.set('status', filters.status);
+      params.set('page', String(filters.page ?? 0));
+      params.set('size', String(filters.size ?? 20));
+      return unwrapSuperAdminResponse<PagedResponse<SmsPurchase>>(
+        await request<any>(`/api/superadmin/sms-purchases?${params.toString()}`, { method: 'GET' }));
+    },
+    // Debits the full purchased credits; the gym's balance may go negative. Money refund is offline.
+    // 200 data = the reversed row. 409 already reversed / not completed; 400 not an SMS purchase or
+    // bad reason; 404 unknown payment.
+    reversePurchase: async (paymentId: string, reason: string) =>
+      unwrapSuperAdminResponse<SmsPurchase>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/reverse`, {
+          method: 'POST', body: JSON.stringify({ reason })
+        })),
+    // Asks Snippe for the real status of a purchase still `pending` (> 10 min old) and, if paid,
+    // fulfils it through the same webhook fulfilment path (credits + invoice). No body.
+    // 200 data = the updated purchase row; 202 data = {snippeStatus} (not paid yet).
+    // request() does not expose the HTTP status of a success, so 200 vs 202 is told apart by shape:
+    // a row carries `paymentId`. Errors throw with err.status: 409 not pending, 404 unknown payment,
+    // 403 not a superadmin, 502 Snippe unreachable.
+    checkWithSnippe: async (paymentId: string): Promise<CheckWithSnippeResult> => {
+      const res = unwrapSuperAdminResponse<any>(
+        await request<any>(`/api/superadmin/sms-purchases/${encodeURIComponent(paymentId)}/check-with-snippe`, {
+          method: 'POST'
+        }));
+      const data = res?.data;
+      const message = typeof res?.message === 'string' ? res.message : null;
+      if (data && typeof data === 'object' && typeof data.paymentId === 'string') {
+        return { kind: 'updated', purchase: data as SmsPurchase, message };
+      }
+      const snippeStatus = data && typeof data === 'object' && data.snippeStatus != null ? String(data.snippeStatus) : null;
+      return { kind: 'still', snippeStatus, message };
+    },
+
+    // Flat `Response` whose `data` is the array itself (both statuses, id order). Not passed through
+    // unwrapSuperAdminResponse: that helper would take a non-empty data array for the old
+    // ResponseWrapper and return the first sender row instead of the response. 404 unknown gym.
+    listSenderIds: async (companyId: number): Promise<ApiResponse<CompanySenderId[]>> => {
+      const res = await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, { method: 'GET' });
+      const first = Array.isArray(res?.data) ? res.data[0] : undefined;
+      const isWrapper = first && typeof first === 'object' && 'success' in first && !('senderName' in first);
+      return (isWrapper ? first : res) as ApiResponse<CompanySenderId[]>;
+    },
+    // 201 data = the new row. 400 errors.senderName|status|isDefault|notes; 409 errors.senderName
+    // (duplicate in this gym, ignoring case); 404 unknown gym.
+    createSenderId: async (companyId: number, data: CreateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids`, {
+          method: 'POST', body: JSON.stringify(data)
+        })),
+    // Partial {status?, isDefault?, notes?}. 200 data = the row. Setting a default clears the previous
+    // one; disabling the default clears it (gym falls back to Growsoft) — callers re-read the list.
+    // 400 errors.isDefault when making a DISABLED sender default; 404 sender not in this gym.
+    updateSenderId: async (companyId: number, senderId: number, data: UpdateSenderIdRequest) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
+          method: 'PATCH', body: JSON.stringify(data)
+        })),
+    // DELETE removes the row for good. 200 data = the removed row. Deleting the default clears the default (the gym
+    // falls back to Growsoft); a campaign still waiting to send with it goes out from the default instead.
+    // 404 sender not in this gym (already gone).
+    deleteSenderId: async (companyId: number, senderId: number) =>
+      unwrapSuperAdminResponse<CompanySenderId>(
+        await request<any>(`/api/superadmin/companies/${companyId}/sender-ids/${senderId}`, {
+          method: 'DELETE'
+        })),
+  },
+
   backfill: {
     preview: (companyId: number, from: string, to: string) =>
       request<BackfillPreview>(`/api/superadmin/maintenance/invoice-backfill/preview?companyId=${companyId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
@@ -494,6 +621,68 @@ export const api = {
       })
   },
 
+  // Plan notifications wave F2 — platform settings and the 10 SMS templates. Flat `Response` envelope.
+  planNotifications: {
+    getSettings: () =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'GET' }),
+    updateSettings: (body: Partial<PlanNotificationSettings>) =>
+      request<PlanNotificationSettings>('/api/superadmin/plan-notifications/settings', { method: 'PUT', body: JSON.stringify(body) }),
+    templates: () =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates', { method: 'GET' }),
+    updateTemplate: (stage: string, lang: string, body: string) =>
+      request<PlanNotificationTemplate>(`/api/superadmin/plan-notifications/templates/${stage}/${lang}`, {
+        method: 'PUT', body: JSON.stringify({ body }),
+      }),
+    resetTemplates: (stage?: string, language?: string) =>
+      request<PlanNotificationTemplate[]>('/api/superadmin/plan-notifications/templates/reset', {
+        method: 'POST', body: JSON.stringify({ stage, language }),
+      }),
+    preview: (body: { stage: string; language: string; body?: string; companyId?: number }) =>
+      request<PlanNotificationPreview>('/api/superadmin/plan-notifications/preview', { method: 'POST', body: JSON.stringify(body) }),
+    testSend: (body: { phone: string; stage: string; language: string }) =>
+      request<PlanNotificationTestSendResult>('/api/superadmin/plan-notifications/test-send', { method: 'POST', body: JSON.stringify(body) }),
+    upcoming: (days = 14) =>
+      request<PlanUpcomingResult>(`/api/superadmin/plan-notifications/upcoming?days=${days}`, { method: 'GET' }),
+    log: (f: PlanLogFilters) => {
+      const q = new URLSearchParams();
+      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, String(v)); });
+      return request<PagedResponse<PlanLogRow>>(`/api/superadmin/plan-notifications/log?${q.toString()}`, { method: 'GET' });
+    },
+    smsStats: (from: string, to: string) =>
+      request<PlanSmsStats>(`/api/superadmin/plan-notifications/stats/sms?from=${from}&to=${to}`, { method: 'GET' }),
+    expiryStats: (from: string, to: string) =>
+      request<PlanExpiryStats>(`/api/superadmin/plan-notifications/stats/expiry?from=${from}&to=${to}`, { method: 'GET' }),
+  },
+  // Plan notifications wave F3 — one gym's plan-notification preferences. Flat `Response` envelope.
+  notificationPrefs: {
+    get: (companyId: number) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, { method: 'GET' }),
+    update: (companyId: number, body: UpdateNotificationPrefsRequest) =>
+      request<NotificationPrefs>(`/api/superadmin/companies/${companyId}/notification-prefs`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+  },
+  // Plan notifications wave F1 — offline platform payments (run/CONTRACT.md). Flat `Response` envelope.
+  platformPayments: {
+    preview: (companyId: number, params: { planId?: string; period?: string; months?: number }) => {
+      const q = new URLSearchParams();
+      if (params.planId) q.set('planId', params.planId);
+      if (params.period) q.set('period', params.period);
+      if (params.months != null) q.set('months', String(params.months));
+      return request<PlatformPaymentPreview>(`/api/superadmin/companies/${companyId}/payments/preview?${q.toString()}`, { method: 'GET' });
+    },
+    record: (companyId: number, body: RecordPlatformPaymentRequest) =>
+      request<PlatformPaymentResult>(`/api/superadmin/companies/${companyId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    voidInvoice: (invoiceId: string, reason: string) =>
+      request<PlatformPaymentResult>(`/api/superadmin/billing/invoices/${invoiceId}/void`, {
+        method: 'PATCH',
+        body: JSON.stringify({ reason }),
+      }),
+  },
   billing: {
     // Public endpoints — no auth required, respond with a plain array
     getPlans: () =>
