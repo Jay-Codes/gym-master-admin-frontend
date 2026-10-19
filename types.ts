@@ -49,6 +49,10 @@ export interface User {
   activatedAt: string;
   deactivatedAt: string | null;
   deactivationReason: string | null;
+  /** KZ-01 grace: the account still holds the retired shared password. */
+  usesRetiredPassword?: boolean;
+  /** KZ-01 grace: when the holder asked for a password reset; null/absent = not asked. */
+  passwordResetRequestedAt?: string | null;
 
   // Onboarding / verification
   onboardingStep?: string;
@@ -515,6 +519,16 @@ export interface BackfillRun {
 // Growsoft pays for OTP SMS on the gymless login path (a member who opens the
 // portal without their gym's QR link). Gyms pay for everything else, so nothing
 // here is a gym-billable figure.
+
+/** KZ-01 grace: GET/PUT /api/superadmin/password-policy (bare DTO). */
+export interface PasswordPolicySettings {
+  /** REFUSE = the retired shared password is refused at login; WARN = it logs in with a warning. */
+  mode: 'REFUSE' | 'WARN';
+  /** Last day WARN applies (YYYY-MM-DD, Africa/Dar_es_Salaam); null = no end date. */
+  warnUntil: string | null;
+  /** WARN and not past warnUntil: the retired password works right now. */
+  graceActive: boolean;
+}
 
 export interface PortalOtpSettings {
   /** TZS charged per SMS credit. Stamped onto each ledger row at time of send. */

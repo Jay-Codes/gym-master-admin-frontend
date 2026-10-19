@@ -10,7 +10,7 @@ import {
   PartnerPayout, CreatePayoutRequest, UpdatePayoutStatusRequest,
   UpdatePlanRequest, PlanAudit,
   BackfillPreview, BackfillRun, RunBackfillRequest,
-  PortalOtpSettings, PortalOtpSpend,
+  PortalOtpSettings, PortalOtpSpend, PasswordPolicySettings,
   PortalAccessRequest, PortalAccessStatus,
   SmsPricingSettings, UpdateSmsPricingRequest, SmsPricingOverride, SetSmsPricingOverrideRequest, PagedResponse,
   SmsPurchase, SmsPurchaseFilters, CheckWithSnippeResult,
@@ -318,6 +318,18 @@ export const api = {
             body: JSON.stringify(data)
           })
       }
+    },
+
+    // KZ-01 grace: let the retired shared staff password log in with a warning until a date.
+    passwordPolicy: {
+      // Bare DTO (not the Response envelope), like the portal OTP settings.
+      get: async () =>
+        (await request<any>('/api/superadmin/password-policy', { method: 'GET' })) as unknown as PasswordPolicySettings,
+      update: async (data: { mode: 'REFUSE' | 'WARN'; warnUntil: string | null }) =>
+        (await request<any>('/api/superadmin/password-policy', {
+          method: 'PUT',
+          body: JSON.stringify(data)
+        })) as unknown as PasswordPolicySettings,
     },
 
     // Gymless portal login — platform-funded OTP. Growsoft pays for these sends,

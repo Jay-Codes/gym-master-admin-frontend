@@ -19,6 +19,7 @@ import {
 } from './types';
 import { OnboardingFlow } from './components/OnboardingFlow';
 import { SmsPricingPage } from './components/SmsPricingPage';
+import { PasswordPolicyPage } from './components/PasswordPolicyPage';
 import { PlanNotificationsPage } from './components/PlanNotificationsPage';
 import { SmsPurchasesPage } from './components/SmsPurchasesPage';
 import { csvCell, invoicePeriodLabel, invoicePlanLabel, invoiceSourceLabel, paymentMethodLabel } from './components/invoiceFormat';
@@ -1646,6 +1647,19 @@ const UsersPage = () => {
                         header: 'Status', accessor: (u) => (
                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.isActivated !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                 {u.isActivated !== false ? 'Active' : 'Inactive'}
+                            </span>
+                        )
+                    },
+                    {
+                        // KZ-01 grace: who still holds the retired shared password, and who asked for a reset.
+                        header: 'Password', accessor: (u) => (
+                            <span className="flex flex-col gap-1 items-start">
+                                {u.passwordResetRequestedAt && (
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800" title={u.passwordResetRequestedAt}>Reset requested</span>
+                                )}
+                                {u.usesRetiredPassword && (
+                                    <span className="px-2 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800">Old shared password</span>
+                                )}
                             </span>
                         )
                     }
@@ -4385,6 +4399,7 @@ const DashboardLayout = () => {
                 <Route path="/payouts" element={<PayoutsPage />} />
                 <Route path="/sms-spend" element={<SmsSpendPage />} />
                 <Route path="/sms-pricing" element={<SmsPricingPage />} />
+                <Route path="/password-policy" element={<PasswordPolicyPage />} />
                 <Route path="/plan-notifications" element={<PlanNotificationsPage />} />
                 <Route path="/sms-purchases" element={<SmsPurchasesPage />} />
                 <Route path="/maintenance" element={<MaintenancePage />} />
